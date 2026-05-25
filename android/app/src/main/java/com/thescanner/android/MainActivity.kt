@@ -2,17 +2,21 @@ package com.thescanner.android
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -37,9 +41,32 @@ class MainActivity : ComponentActivity() {
     private var goApp: App? = null
     private val handler = Handler(Looper.getMainLooper())
 
+    // WebView hands us a ValueCallback when the page opens <input type="file">.
+    // We stash it here until the system file picker returns, then deliver the
+    // selected URI(s) back to the WebView. Cleared on cancel / failure.
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    // ActivityResult launcher for the system file picker. Registered in
+    // onCreate (mandatory before onStart per the Activity Result API
+    // contract). Receives the result and forwards it to the WebView.
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // Must be registered before setContentView so the WebView's first
+        // file-input click (if any during layout) doesn't race the launcher.
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val uris: Array<Uri>? = if (result.resultCode == RESULT_OK) {
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            } else null
+            fileChooserCallback?.onReceiveValue(uris)
+            fileChooserCallback = null
+        }
+
         setContentView(R.layout.activity_main)
 
         val rootView = findViewById<View>(android.R.id.content)
@@ -82,7 +109,43 @@ class MainActivity : ComponentActivity() {
         // alert/confirm/prompt. Without it the WebView silently
         // returns false from every confirm() call — which is why
         // the "delete this list?" button appeared to do nothing.
-        wv.webChromeClient = WebChromeClient()
+        //
+        // We also override onShowFileChooser so <input type="file">
+        // actually opens the system picker. The default impl returns
+        // false and the tap silently disappears.
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                // Replace any in-flight callback (e.g. user double-tapped).
+                // Resolving the old one with null tells WebView the previous
+                // pick was cancelled, so it doesn't leak.
+                fileChooserCallback?.onReceiveValue(null)
+                fileChooserCallback = filePathCallback
+
+                // Prefer the intent crafted by WebView (respects accept=""
+                // and multiple attributes); fall back to a generic picker
+                // if the params are absent.
+                val intent = fileChooserParams?.createIntent()
+                    ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }
+                return try {
+                    fileChooserLauncher.launch(intent)
+                    true
+                } catch (_: Exception) {
+                    // No picker installed (rare — but e.g. headless test
+                    // images). Hand the WebView a null result so it
+                    // doesn't sit forever waiting for the callback.
+                    fileChooserCallback = null
+                    filePathCallback?.onReceiveValue(null)
+                    false
+                }
+            }
+        }
 
         // Wire WebView "download a resource" notifications to the
         // platform DownloadManager, so the result-export buttons
