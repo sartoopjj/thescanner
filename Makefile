@@ -212,7 +212,7 @@ ios-bind:
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found. Run: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init"; exit 1; }
 	go get golang.org/x/mobile/bind
 	go mod tidy
-	gomobile bind -iosversion=14.0 -target=ios,iossimulator \
+	gomobile bind -iosversion=15.0 -target=ios,iossimulator \
 		-ldflags='$(IOS_LDFLAGS)' \
 		-o $(IOS_FRAMEWORK) github.com/sartoopjj/thescanner/mobile
 
@@ -220,7 +220,7 @@ ios-bind-catalyst:
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found"; exit 1; }
 	go get golang.org/x/mobile/bind
 	go mod tidy
-	gomobile bind -iosversion=14.0 -target=ios,iossimulator,maccatalyst \
+	gomobile bind -iosversion=15.0 -target=ios,iossimulator,maccatalyst \
 		-ldflags='$(IOS_LDFLAGS)' \
 		-o $(IOS_FRAMEWORK) github.com/sartoopjj/thescanner/mobile
 

@@ -226,10 +226,17 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME:-dev}
           if [ ! -x ./gradlew ]; then gradle wrapper --gradle-version 8.10.2; fi
-          if [ -f app/thescanner.jks ]; then BT=release; TASK=assembleRelease; else BT=debug; TASK=assembleDebug; fi
+          # Decode step writes the keystore to app/thescanner.jks (not
+          # keystore.jks). Pick assembleRelease when EITHER name is on
+          # disk so signed builds work no matter which file got dropped.
+          if [ -f app/thescanner.jks ] || [ -f app/keystore.jks ]; then
+            BT=release; TASK=assembleRelease
+          else
+            BT=debug; TASK=assembleDebug
+          fi
 
           # Pass 1 — per-ABI split APKs.
-          ./gradlew --no-daemon --build-cache $TASK
+          ./gradlew --no-daemon --build-cache --stacktrace $TASK
 
           APK_DIR=app/build/outputs/apk/$BT
           cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thescanner-android-${VERSION}-arm64-v8a.apk
@@ -251,6 +258,90 @@ jobs:
             artifacts/thescanner-android-*-x86.apk
             artifacts/thescanner-android-*-x86_64.apk
             artifacts/thescanner-android-*-universal.apk
+
+  ios-ipa:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      # Skip the rest of this job until ios/Thescanner.xcodeproj is
+      # committed. hashFiles() isn't valid in a job-level `if:`, so we
+      # set an output here and gate every subsequent step on it.
+      - name: Check for iOS Xcode project
+        id: ios_check
+        run: |
+          if [ -f ios/Thescanner.xcodeproj/project.pbxproj ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "ios/Thescanner.xcodeproj not in git — skipping iOS IPA build."
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.ios_check.outputs.exists == 'true'
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Select Xcode
+        if: steps.ios_check.outputs.exists == 'true'
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install gomobile + gobind
+        if: steps.ios_check.outputs.exists == 'true'
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+          # iOS binds need the objc subpackage on top of /bind.
+          go get golang.org/x/mobile/bind golang.org/x/mobile/bind/objc
+          go mod tidy
+
+      - name: Build Mobile.xcframework
+        if: steps.ios_check.outputs.exists == 'true'
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-X github.com/sartoopjj/thescanner/internal/version.Version=${VERSION} -X github.com/sartoopjj/thescanner/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thescanner/internal/version.Date=${DATE}"
+          gomobile bind -iosversion=15.0 -target=ios,iossimulator -ldflags="${LDFLAGS}" -o ios/Mobile.xcframework ./mobile
+
+      - name: Archive (unsigned)
+        if: steps.ios_check.outputs.exists == 'true'
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          MARKETING_VERSION=${VERSION#v}
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          xcodebuild \
+            -project ios/Thescanner.xcodeproj \
+            -scheme Thescanner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Thescanner.xcarchive \
+            archive \
+            MARKETING_VERSION="${MARKETING_VERSION}" \
+            CURRENT_PROJECT_VERSION="${BUILD_NUMBER}" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM=""
+
+      - name: Pack unsigned IPA
+        if: steps.ios_check.outputs.exists == 'true'
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          mkdir -p build/Payload
+          cp -r build/Thescanner.xcarchive/Products/Applications/Thescanner.app build/Payload/
+          (cd build && zip -qry "thescanner-ios-${VERSION}-unsigned.ipa" Payload)
+          ls -lh build/*.ipa
+
+      - name: Upload iOS IPA artifact
+        if: steps.ios_check.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: thescanner-ios-ipa
+          path: build/thescanner-ios-*-unsigned.ipa
 
   macos-dmg:
     needs: test
@@ -282,7 +373,7 @@ jobs:
           path: build/thescanner-macos-*.dmg
 
   release:
-    needs: [build, android-apk, macos-dmg]
+    needs: [build, android-apk, ios-ipa, macos-dmg]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -317,5 +408,8 @@ jobs:
             | Android | armeabi-v7a (older 32-bit phones) | [thescanner-android-${{ github.ref_name }}-armeabi-v7a.apk - اندروید (دستگاه‌های قدیمی‌تر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-armeabi-v7a.apk) |
             | Android | x86_64 (Chromebooks, emulators, WSA) | [thescanner-android-${{ github.ref_name }}-x86_64.apk - اندروید (کروم‌بوک، شبیه‌ساز، WSA)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-x86_64.apk) |
             | Android | x86 (32-bit Intel, niche) | [thescanner-android-${{ github.ref_name }}-x86.apk - اندروید (اینتل ۳۲ بیت، نادر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-x86.apk) |
+            | iOS (unsigned) | universal | [thescanner-ios-${{ github.ref_name }}-unsigned.ipa - آی‌اواس (بدون امضا)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-ios-${{ github.ref_name }}-unsigned.ipa) |
+
+            **iOS / iPadOS (preview, iOS 14+):** the `.ipa` is unsigned. Re-sign with your own Apple ID via AltStore / Sideloadly / `xcrun altool` (your own TestFlight). It won't install directly from a download.
 
             **macOS `.dmg` (preview, macOS 11+):** universal Intel + Apple Silicon, unsigned. First launch: right-click → Open, or `xattr -dr com.apple.quarantine /Applications/Thescanner.app`. CLI users can use the bare `thescanner-server` / `thescanner-client` binaries above.

@@ -1,3 +1,4 @@
+import Combine     // ObservableObject + @Published
 import Foundation
 import Mobile      // gomobile-generated framework
 import UIKit
@@ -49,7 +50,7 @@ final class ServerController: ObservableObject {
                 lastError = "MobileNewApp returned nil"
                 return
             }
-            try inst.start(dir.path, "127.0.0.1:\(port)")
+            try inst.start(dir.path, listen: "127.0.0.1:\(port)")
 
             // Read back the real URL — Go might have picked a different
             // port if our chosen one lost a race with another process.
@@ -87,7 +88,7 @@ final class ServerController: ObservableObject {
     }
 
     private static func tryBind(port: Int) -> Bool {
-        var sock = socket(AF_INET, SOCK_STREAM, 0)
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
         guard sock >= 0 else { return false }
         defer { close(sock) }
         var on: Int32 = 1
