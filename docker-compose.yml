@@ -1,0 +1,48 @@
+# thescanner-server — Docker Compose
+#
+# First-time setup:
+#   1. mkdir -p data
+#   2. docker compose run --rm -i server -config /dev/stdin -data-dir /data </dev/null \
+#        # → it'll bail on missing config. That's fine — write your own:
+#   3. cat > data/config.json <<JSON
+#      {
+#        "server": {
+#          "listen":       "0.0.0.0:5300",
+#          "stats_listen": "0.0.0.0:8053",
+#          "admin_token":  "$(openssl rand -hex 32)",
+#          "admin_path":   "$(openssl rand -hex 16)"
+#        },
+#        "domains": [{"name": "v.example.com"}],
+#        "tokens":  [{"name": "default", "secret": "CHANGE-ME"}]
+#      }
+#      JSON
+#   4. chmod 600 data/config.json
+#   5. docker compose up -d
+#   6. Open  http://<host>:8053/<admin_path>/   (path printed in startup logs).
+#
+# Or run fully from flags (no config.json on disk):
+#   docker compose run --rm server \
+#     -listen 0.0.0.0:5300 -stats-listen 0.0.0.0:8053 \
+#     -admin-token "$TOKEN" -admin-path "$PATH" \
+#     -domain v.example.com -token-name alice -token-secret "$SECRET"
+#
+# Port 53 redirect (external 53 → 5300 inside the container):
+#   sudo iptables -t nat -I PREROUTING -i eth0 -p udp --dport 53 -j REDIRECT --to-ports 5300
+#   sudo iptables -t nat -I PREROUTING -i eth0 -p tcp --dport 53 -j REDIRECT --to-ports 5300
+
+services:
+  server:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-docker}
+        COMMIT:  ${COMMIT:-unknown}
+        DATE:    ${DATE:-unknown}
+    container_name: thescanner-server
+    restart: unless-stopped
+    ports:
+      - "5300:5300/udp"   # DNS
+      - "5300:5300/tcp"   # DNS (TCP fallback / long answers)
+      - "8053:8053/tcp"   # admin panel
+    volumes:
+      - ./data:/data

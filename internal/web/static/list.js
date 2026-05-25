@@ -1,0 +1,429 @@
+(async function () {
+  const tt = (k, fb) => (window.tt ? window.tt(k, fb) : fb);
+  const qs = new URLSearchParams(location.search);
+  const id = qs.get("id");
+  if (!id) { location.href = "/lists"; return; }
+
+  // Config (for default-server + the settings-summary panel).
+  const cfg = await (await fetch("/api/config")).json();
+  const servers = cfg.servers || [];
+  const defaultServer = servers[0] ? servers[0].name : "";
+
+  // ---- helpers --------------------------------------------------------
+  function statusBadge(s) {
+    const map = {
+      pending:   ["neutral", "lists.s_pending"],
+      scanning:  ["running", "lists.s_scanning"],
+      paused:    ["warn",    "lists.s_paused"],
+      done:      ["ok",      "lists.s_done"],
+      deep:      ["running", "lists.s_deep"],
+      deep_done: ["ok",      "lists.s_deep_done"],
+    };
+    const [c, k] = map[s] || ["neutral", s];
+    return `<span class="badge badge-${c}">${tt(k, s)}</span>`;
+  }
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const loc = document.body.dataset.lang === "fa" ? "fa-IR" : undefined;
+    return d.toLocaleString(loc);
+  }
+  function fmtDuration(ms) {
+    if (!ms || ms < 0) return "—";
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+  function kindLabel(k) {
+    return k === "manual"
+      ? tt("lists.kind_manual","manual")
+      : tt("lists.kind_shallow","shallow scan");
+  }
+  function show(elId, on) { document.getElementById(elId).hidden = !on; }
+
+  // ---- meta + progress ------------------------------------------------
+  let meta = null;
+  let startedAt = null;
+
+  function applyMeta(m) {
+    meta = m;
+    document.getElementById("m-name").textContent = m.name;
+    document.getElementById("m-status-badge").outerHTML =
+      `<span id="m-status-badge">${statusBadge(m.status)}</span>`;
+    document.getElementById("m-kind").textContent    = kindLabel(m.kind);
+    document.getElementById("m-server").textContent  = m.server || "—";
+    document.getElementById("m-created").textContent = fmtDate(m.created);
+    document.getElementById("m-total").textContent   = m.total;
+    document.getElementById("m-ok").textContent      = m.ok;
+    document.getElementById("m-failed").textContent  = m.failed;
+    document.getElementById("m-l2").textContent      = m.l2_scored || 0;
+
+    const running = (m.status === "scanning" || m.status === "deep");
+    const hasOK   = m.ok > 0 || m.kind === "manual";
+    show("btn-pause",      running);
+    show("btn-resume",     !running && m.status === "paused");
+    show("btn-deep",       !running && hasOK && m.status !== "deep");
+    show("btn-rescan-ok",  !running && m.kind === "shallow" && m.ok > 0);
+    show("btn-rescan-all", !running && m.kind === "shallow");
+
+    document.getElementById("export-txt").href = `/api/lists/${id}/export?format=txt&status=ok`;
+    document.getElementById("export-csv").href = `/api/lists/${id}/export?format=csv`;
+
+    updateProgress(m);
+  }
+
+  function updateProgress(m) {
+    const card = document.getElementById("progress-card");
+    // Show the progress panel for anything that's running OR has been
+    // running, so the user can review counts post-hoc too.
+    const interesting = m.kind === "shallow" || m.kind === "manual";
+    card.hidden = !interesting;
+    if (!interesting) return;
+
+    // ----- shallow row -----
+    const total  = Math.max(0, m.total);
+    const done   = (m.ok || 0) + (m.failed || 0);
+    const pct    = total > 0 ? Math.floor((done / total) * 100) : 0;
+    const bar    = document.getElementById("shallow-bar");
+    bar.max      = total > 0 ? total : 1;
+    bar.value    = done;
+    document.getElementById("shallow-pct").textContent = pct + "%";
+    document.getElementById("p-ok").textContent     = m.ok || 0;
+    document.getElementById("p-failed").textContent = m.failed || 0;
+    document.getElementById("p-total").textContent  = m.total || 0;
+
+    // Manual lists skip the shallow phase; relabel the row.
+    document.getElementById("shallow-title").textContent =
+      m.kind === "manual"
+        ? tt("lists.kind_manual", "manual")
+        : tt("lists.shallow_progress", "Shallow scan");
+
+    // Elapsed + ETA — useful while actively running.
+    const running = (m.status === "scanning" || m.status === "deep");
+    if (running) {
+      if (!startedAt) startedAt = Date.now();
+      const elapsed = Date.now() - startedAt;
+      show("p-elapsed-wrap", true);
+      document.getElementById("p-elapsed").textContent = fmtDuration(elapsed);
+      if (done > 0 && total > done) {
+        const remain = ((elapsed / done) * (total - done)) | 0;
+        show("p-eta-wrap", true);
+        document.getElementById("p-eta").textContent = fmtDuration(remain);
+      } else {
+        show("p-eta-wrap", false);
+      }
+    } else {
+      startedAt = null;
+      show("p-elapsed-wrap", false);
+      show("p-eta-wrap", false);
+    }
+
+    // ----- deep row -----
+    const elig = m.kind === "manual" ? (m.total || 0) : (m.ok || 0);
+    const scored = m.l2_scored || 0;
+    const deepRunningOrDone =
+      m.status === "deep" || m.status === "deep_done" || scored > 0;
+    show("deep-row", deepRunningOrDone && elig > 0);
+    if (deepRunningOrDone && elig > 0) {
+      const dbar = document.getElementById("deep-bar");
+      dbar.max   = elig;
+      dbar.value = scored;
+      const dpct = elig > 0 ? Math.floor((scored / elig) * 100) : 0;
+      document.getElementById("deep-pct").textContent = dpct + "%";
+      document.getElementById("p-l2-scored").textContent = scored;
+      document.getElementById("p-l2-elig").textContent   = elig;
+    }
+
+    populateSettingsSummary();
+  }
+
+  function populateSettingsSummary() {
+    const body = document.getElementById("settings-summary-body");
+    if (!body || body.dataset.filled === "1") return;
+    body.dataset.filled = "1";
+    const sc = cfg.scan   || {};
+    const l2 = cfg.level2 || {};
+    const isFa = (document.body.dataset.lang || "en") === "fa";
+    const onTxt  = tt("common.on",  "on");
+    const offTxt = tt("common.off", "off");
+    const fa = (n) => isFa ? String(n).replace(/[0-9]/g, d => "۰۱۲۳۴۵۶۷۸۹"[+d]) : n;
+    const num = (n) => n == null ? "—" : fa(n);
+    const bool = (b) => b ? onTxt : offTxt;
+    const rows = [
+      ["scan.min_query",       num(sc.min_query)],
+      ["scan.max_query",       num(sc.max_query)],
+      ["scan.min_response",    num(sc.min_response)],
+      ["scan.max_response",    num(sc.max_response)],
+      ["scan.parallel",        num(sc.parallel)],
+      ["scan.duplicate",       num(sc.duplicate)],
+      ["scan.timeout_seconds", num(sc.timeout_seconds)],
+      ["scan.retries",         num(sc.retries)],
+      ["scan.edns0",           bool(sc.edns0)],
+      ["scan.subnet_expand",   sc.subnet_expand ? "/" + fa(sc.subnet_mask) : offTxt],
+      ["l2.queries_per_resolver", num(l2.queries_per_resolver)],
+      ["l2.parallel",          num(l2.parallel)],
+    ];
+    body.innerHTML = rows.map(([k, v]) => {
+      const label = tt("settings_summary." + k, k);
+      return `<span class="k">${label}</span><span class="v">${v}</span>`;
+    }).join("");
+  }
+
+  // ---- lifecycle ------------------------------------------------------
+  async function action(name) {
+    const r = await fetch(`/api/lists/${id}/${name}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ server: meta && meta.server ? meta.server : defaultServer }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showError(j);
+    }
+    refresh();
+  }
+  document.getElementById("btn-pause" ).onclick = () => action("pause");
+  document.getElementById("btn-resume").onclick = () => action("resume");
+  document.getElementById("btn-deep"  ).onclick = () => action("deep");
+
+  // Rescan: create a new list seeded from this one.
+  async function rescan(okOnly) {
+    const body = {
+      rescan_from: id,
+      rescan_ok_only: okOnly,
+      server: meta && meta.server ? meta.server : defaultServer,
+      auto_start: true,
+    };
+    const r = await fetch("/api/lists", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showError(j);
+      return;
+    }
+    const nm = await r.json();
+    location.href = "/list?id=" + encodeURIComponent(nm.id);
+  }
+  document.getElementById("btn-rescan-ok" ).onclick = () => rescan(true);
+  document.getElementById("btn-rescan-all").onclick = () => rescan(false);
+
+  // ---- rename ---------------------------------------------------------
+  const renameModal = document.getElementById("rename-modal");
+  const renameInput = document.getElementById("rename-input");
+  document.getElementById("btn-rename").onclick = () => {
+    renameInput.value = (meta && meta.name) || "";
+    renameModal.hidden = false;
+    setTimeout(() => renameInput.focus(), 30);
+  };
+  const closeRename = () => { renameModal.hidden = true; };
+  document.getElementById("rename-cancel").onclick = closeRename;
+  document.getElementById("rename-close" ).onclick = closeRename;
+  renameModal.addEventListener("click", e => { if (e.target === renameModal) closeRename(); });
+  document.getElementById("rename-ok").onclick = async () => {
+    const name = renameInput.value.trim();
+    if (!name) return;
+    const r = await fetch(`/api/lists/${id}/rename`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showError(j);
+      return;
+    }
+    closeRename();
+    refresh();
+  };
+
+  // ---- delete ---------------------------------------------------------
+  document.getElementById("btn-delete").onclick = async () => {
+    if (!confirm(tt("lists.confirm_delete", "Delete this list? This cannot be undone."))) return;
+    const r = await fetch(`/api/lists/${id}`, { method: "DELETE" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showError(j);
+      return;
+    }
+    location.href = "/lists";
+  };
+
+  // ---- results table + pagination ------------------------------------
+  const filterEl = document.getElementById("filter");
+  const searchEl = document.getElementById("search");
+  const tbody    = document.querySelector("#results-table tbody");
+  const prevBtn  = document.getElementById("prev-page");
+  const nextBtn  = document.getElementById("next-page");
+  const pageInfo = document.getElementById("page-info");
+  const pageSize = document.getElementById("page-size");
+
+  let offset = 0;
+  let limit  = parseInt(pageSize.value, 10) || 100;
+  let total  = 0;
+  let lastSearchAt = 0;
+
+  function fmt(n) { return (n == null || n === "") ? "" : n; }
+
+  async function loadResults() {
+    const params = new URLSearchParams();
+    if (filterEl.value) params.set("status", filterEl.value);
+    const q = searchEl.value.trim();
+    if (q) params.set("q", q);
+    params.set("offset", String(offset));
+    params.set("limit",  String(limit));
+
+    let j = {};
+    try {
+      const r = await fetch(`/api/lists/${id}/results?` + params.toString());
+      j = await r.json();
+    } catch (e) { return; }
+
+    if (j.meta) applyMeta(j.meta);
+    total = j.count || 0;
+    if (offset >= total) offset = Math.max(0, total - limit);
+
+    tbody.innerHTML = "";
+    const listKind = (meta && meta.kind) || "";
+    const subLT1 = tt("results.sub_ms", "<1ms");
+
+    // Render RTT: 0 means "sub-millisecond" when we DID measure (shallow
+    // ran or this is a deep-tested row), and "not measured" otherwise.
+    function rttCell(row) {
+      if (row.status !== "ok") return "";
+      if (row.rtt_ms > 0) return row.rtt_ms;
+      // Status=ok with rtt_ms=0: distinguish "sub-ms loopback" from
+      // "shallow never ran" (manual list, no deep scan either).
+      if (listKind === "manual" && !(row.l2_total > 0)) return "";
+      return subLT1;
+    }
+    function p95Cell(row) {
+      if (!(row.l2_total > 0)) return "";
+      return row.l2_p95_ms > 0 ? row.l2_p95_ms : subLT1;
+    }
+    function l2OkCell(row) {
+      if (!(row.l2_total > 0)) return "";
+      return `${row.l2_ok} / ${row.l2_total}`;
+    }
+    function scoreCell(row) {
+      if (!(row.l2_total > 0)) return "";
+      return row.l2_score.toFixed(2);
+    }
+
+    (j.results || []).forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.ip}${row.source === "subnet" ? ' <span class="tag-subnet" title="discovered via /24 expand">+</span>' : ""}</td>
+        <td class="status-${row.status}">${row.status}${row.reason ? " ("+row.reason+")" : ""}</td>
+        <td>${rttCell(row)}</td>
+        <td>${l2OkCell(row)}</td>
+        <td>${p95Cell(row)}</td>
+        <td>${scoreCell(row)}</td>
+        <td>${row.source || ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    const startIdx = total === 0 ? 0 : (offset + 1);
+    const endIdx   = Math.min(offset + limit, total);
+    pageInfo.textContent = total === 0 ? "0 / 0" : `${startIdx}–${endIdx} / ${total}`;
+    prevBtn.disabled = (offset <= 0);
+    nextBtn.disabled = (offset + limit >= total);
+  }
+
+  prevBtn.onclick = () => { offset = Math.max(0, offset - limit); loadResults(); };
+  nextBtn.onclick = () => { offset = offset + limit; loadResults(); };
+  filterEl.onchange = () => { offset = 0; loadResults(); };
+  pageSize.onchange = () => {
+    limit  = parseInt(pageSize.value, 10) || 100;
+    offset = 0;
+    loadResults();
+  };
+  searchEl.addEventListener("input", () => {
+    const now = Date.now(); lastSearchAt = now;
+    setTimeout(() => { if (lastSearchAt === now) { offset = 0; loadResults(); } }, 250);
+  });
+
+  async function refresh() { await loadResults(); }
+  refresh();
+  setInterval(refresh, 2000);
+
+  // ---- live log ------------------------------------------------------
+  // SSE stream of every query the active scan emits. The endpoint
+  // backfills from a ring buffer on connect, then tails. We filter by
+  // `?list=<id>` so the panel only shows this list's events.
+  const logBody  = document.getElementById("log-body");
+  const logCount = document.getElementById("log-count");
+  const logPanel = document.getElementById("log-panel");
+  const logToggle= document.getElementById("log-toggle");
+  const logClear = document.getElementById("log-clear");
+
+  const MAX_LINES = 500;
+  let logLines = 0;
+
+  function fmtClock(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "--:--:--";
+    return d.toLocaleTimeString([], { hour12: false });
+  }
+  function appendLog(e) {
+    const tr = document.createElement("div");
+    const ok = e.status === "ok";
+    tr.className = "log-line " + (ok ? "ok" : (e.status === "fail" ? "fail" : ""));
+    // The "extra" column shows the actual on-the-wire DNS name the
+    // scanner just sent — the encoded base32 labels under the chosen
+    // domain. Falls back to noise-domain / reason / message when
+    // there's no real qname (noise lookups, error paths).
+    const extra = e.qname ? e.qname
+                : e.domain ? `→ ${e.domain}`
+                : e.reason ? e.reason
+                : (e.message || "");
+    // Q→R lengths so you can eyeball whether large queries cause failures.
+    const lens = (e.q_len || e.resp_len)
+      ? `${e.q_len || 0}→${e.resp_len || 0}B`
+      : "";
+    tr.innerHTML = `
+      <span class="lt">${fmtClock(e.time)}</span>
+      <span class="li-status">${e.status || e.kind || ""}</span>
+      <span class="li-ip">${e.ip || ""}</span>
+      <span class="li-rtt">${e.rtt_ms ? e.rtt_ms + "ms" : ""}</span>
+      <span class="li-len">${lens}</span>
+      <span class="li-extra" title="${e.qname || ""}">${extra}</span>
+    `;
+    logBody.appendChild(tr);
+    logLines++;
+    while (logBody.childElementCount > MAX_LINES) logBody.removeChild(logBody.firstChild);
+    logCount.textContent = String(logLines);
+    // Auto-scroll only if user is already at/near the bottom.
+    const nearBottom = logBody.scrollHeight - logBody.scrollTop - logBody.clientHeight < 40;
+    if (nearBottom) logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  // Click anywhere on the header bar toggles the panel — easier target
+  // on phones than just the chevron. Internal buttons (Clear, the
+  // chevron itself) keep their own handlers via stopPropagation.
+  const logHead = document.querySelector("#log-panel .log-head");
+  logHead.addEventListener("click", (e) => {
+    if (e.target.closest("#log-clear")) return;
+    const c = logPanel.dataset.collapsed === "true";
+    logPanel.dataset.collapsed = c ? "false" : "true";
+  });
+  logHead.style.cursor = "pointer";
+  logClear.onclick = (e) => {
+    e.stopPropagation();
+    logBody.innerHTML = ""; logLines = 0;
+    logCount.textContent = "0";
+  };
+
+  const es = new EventSource(`/api/log/stream?list=${encodeURIComponent(id)}`);
+  es.onmessage = (m) => {
+    try { appendLog(JSON.parse(m.data)); } catch (_) {}
+  };
+  es.onerror = () => { /* browser auto-reconnects */ };
+  window.addEventListener("beforeunload", () => es.close());
+})();

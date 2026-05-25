@@ -1,0 +1,56 @@
+{{define "scan.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <section class="card empty-state" id="empty-servers" hidden>
+    <h2 data-i18n="scan.no_servers_title">No scanner-server configured</h2>
+    <p style="color:var(--muted);margin:.4rem 0 1rem;" data-i18n="scan.no_servers_body">Add a scanner-server endpoint (its domain + token) before you can run a scan.</p>
+    <a class="btn" href="/config" data-i18n="scan.go_to_config">Open settings</a>
+  </section>
+
+  <section class="card" id="scan-card" hidden>
+    <h2 data-i18n="scan.title">Run a scan</h2>
+
+    <div class="field">
+      <div class="field-head"><label data-i18n="scan.kind">Scan kind</label></div>
+      <select id="scan-kind">
+        <option value="shallow" data-i18n="scan.kind_shallow">Shallow scan</option>
+        <option value="manual"  data-i18n="scan.kind_manual">Deep scan (skip shallow — tip: run shallow first, then deep-scan only the live resolvers)</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label data-i18n="scan.name">List name (optional)</label></div>
+      <input id="scan-name" type="text" placeholder="auto-generated if empty">
+    </div>
+
+    <div class="field" id="server-field">
+      <div class="field-head"><label data-i18n="scan.server">Server</label></div>
+      <select id="server-select"></select>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label data-i18n="scan.resolvers">Resolvers (one IP or CIDR per line)</label></div>
+      <textarea id="resolvers" rows="8" placeholder="8.8.8.8&#10;1.1.1.1&#10;192.0.2.0/24"></textarea>
+    </div>
+
+    <div class="row">
+      <label class="btn ghost" for="resolver-import" data-i18n="scan.import">Import file</label>
+      <input id="resolver-import" type="file" accept=".txt,.csv,text/plain,text/csv" hidden>
+      <button type="button" id="btn-export-resolvers" class="ghost" data-i18n="scan.export_resolvers">Export list</button>
+      <button type="button" id="btn-clear-resolvers" class="ghost" data-i18n="scan.clear">Clear</button>
+      <span class="page-info" id="resolver-count"></span>
+    </div>
+
+    <div class="row">
+      <button id="btn-create"   data-i18n="scan.start">Start</button>
+      <button id="btn-create-only" class="ghost" data-i18n="scan.create_only">Save without scanning</button>
+    </div>
+  </section>
+</main>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

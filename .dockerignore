@@ -1,0 +1,16 @@
+.git
+.github
+bin/
+build/
+tmp/
+data/
+android/build
+android/app/build
+android/app/libs
+ios/build
+ios/DerivedData
+ios/Mobile.xcframework
+*.dmg
+*.apk
+*.ipa
+*.aar

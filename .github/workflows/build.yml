@@ -1,0 +1,316 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: gobuild-test-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: gobuild-test-${{ runner.os }}-
+      - name: Test + vet
+        run: |
+          go vet ./... &
+          go test -race -count=1 ./...
+          wait
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: freebsd
+            goarch: amd64
+          - goos: freebsd
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: android
+            goarch: arm64
+          - goos: android
+            goarch: arm
+            goarm: '7'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: gobuild-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: gobuild-${{ matrix.goos }}-${{ matrix.goarch }}-
+
+      - name: Install UPX
+        if: matrix.goos == 'linux'
+        run: sudo apt-get install -y upx-ucl
+
+      # Embed PE version info into the Windows .exe so AV heuristics
+      # don't flag unsigned Go binaries.
+      - name: Generate Windows PE resources
+        if: matrix.goos == 'windows'
+        run: |
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+          VERSION=${GITHUB_REF_NAME:-dev}
+          VER_NUM="${VERSION#v}"
+          NUM_ONLY=$(echo "$VER_NUM" | grep -oE '^[0-9]+(\.[0-9]+)*' || echo "0.0.0")
+          V_MAJ=$(echo "$NUM_ONLY" | awk -F. '{print $1+0}')
+          V_MIN=$(echo "$NUM_ONLY" | awk -F. '{print $2+0}')
+          V_PATCH=$(echo "$NUM_ONLY" | awk -F. '{print $3+0}')
+          for d in cmd/server cmd/client; do
+            (cd "$d" && goversioninfo \
+              -ver-major="$V_MAJ" \
+              -ver-minor="$V_MIN" \
+              -ver-patch="$V_PATCH" \
+              -product-version="$VER_NUM" \
+              -file-version="$VER_NUM" \
+              -o resource_windows_amd64.syso \
+              versioninfo.json)
+          done
+
+      - name: Build Server
+        if: matrix.goos != 'android'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/sartoopjj/thescanner/internal/version.Version=${VERSION} -X github.com/sartoopjj/thescanner/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thescanner/internal/version.Date=${DATE}"
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          go build -trimpath -ldflags="${LDFLAGS}" -o build/thescanner-server-${{ matrix.goos }}-${{ matrix.goarch }}${ext} ./cmd/server
+
+      - name: Build Client
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm || '' }}
+          CGO_ENABLED: '0'
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          ext=""
+          BUILD_MODE=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          LDFLAGS="-s -w -X github.com/sartoopjj/thescanner/internal/version.Version=${VERSION} -X github.com/sartoopjj/thescanner/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thescanner/internal/version.Date=${DATE}"
+          if [ "${{ matrix.goos }}" = "android" ]; then
+            BUILD_MODE="-buildmode=pie"
+            LDFLAGS="${LDFLAGS} -extldflags=-Wl,-z,max-page-size=16384"
+          fi
+          # Android: cgo via NDK clang so DNS goes through bionic libc.
+          if [ "${{ matrix.goos }}" = "android" ]; then
+            export CGO_ENABLED=1
+            case "${{ matrix.goarch }}" in
+              arm)
+                export CC="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang"
+                ;;
+              arm64)
+                export CC="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+                ;;
+            esac
+            test -x "$CC" || { echo "NDK clang not found at $CC"; exit 1; }
+          fi
+          if [ "${{ matrix.goos }}" = "android" ] && [ "${{ matrix.goarch }}" = "arm64" ]; then
+            out="build/thescanner-client-android-arm64"
+          elif [ "${{ matrix.goos }}" = "android" ] && [ "${{ matrix.goarch }}" = "arm" ]; then
+            out="build/thescanner-client-android-arm"
+          else
+            out="build/thescanner-client-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
+          fi
+          go build -trimpath -buildvcs=false $BUILD_MODE -ldflags="${LDFLAGS}" -o "$out" ./cmd/client
+
+      # UPX skipped on Windows (triggers AV heuristics). Linux only.
+      - name: Compress with UPX
+        if: matrix.goos == 'linux'
+        run: |
+          find build -maxdepth 1 -type f -print0 \
+            | xargs -0 -n1 -P "$(nproc)" -I{} sh -c 'upx --best --lzma "$1" || true' _ {}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/
+
+  android-apk:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install gomobile
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+
+      - name: Build gomobile AAR
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/sartoopjj/thescanner/internal/version.Version=${VERSION} -X github.com/sartoopjj/thescanner/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thescanner/internal/version.Date=${DATE} -extldflags=-Wl,-z,max-page-size=16384"
+          mkdir -p android/app/libs
+          gomobile bind -target=android/arm,android/arm64,android/386,android/amd64 -androidapi 24 \
+            -ldflags="${LDFLAGS}" -o android/app/libs/scanner.aar ./mobile
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/thescanner.jks
+            echo "Keystore decoded successfully"
+          else
+            echo "No KEYSTORE_BASE64 secret set — will use debug signing"
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Stage artifacts dir
+        run: mkdir -p artifacts
+
+      - name: Build Android APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS:        ${{ secrets.KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD:     ${{ secrets.KEY_PASSWORD }}
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          if [ ! -x ./gradlew ]; then gradle wrapper --gradle-version 8.10.2; fi
+          if [ -f app/thescanner.jks ]; then BT=release; TASK=assembleRelease; else BT=debug; TASK=assembleDebug; fi
+
+          # Pass 1 — per-ABI split APKs.
+          ./gradlew --no-daemon --build-cache $TASK
+
+          APK_DIR=app/build/outputs/apk/$BT
+          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thescanner-android-${VERSION}-arm64-v8a.apk
+          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thescanner-android-${VERSION}-armeabi-v7a.apk
+          cp "$APK_DIR"/app-x86-${BT}.apk          ../artifacts/thescanner-android-${VERSION}-x86.apk
+          cp "$APK_DIR"/app-x86_64-${BT}.apk       ../artifacts/thescanner-android-${VERSION}-x86_64.apk
+
+          # Pass 2 — universal APK.
+          ./gradlew --no-daemon --build-cache -PuniversalBuild=true $TASK
+          cp "$APK_DIR"/app-${BT}.apk              ../artifacts/thescanner-android-${VERSION}-universal.apk
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: thescanner-android-apk
+          path: |
+            artifacts/thescanner-android-*-arm64-v8a.apk
+            artifacts/thescanner-android-*-armeabi-v7a.apk
+            artifacts/thescanner-android-*-x86.apk
+            artifacts/thescanner-android-*-x86_64.apk
+            artifacts/thescanner-android-*-universal.apk
+
+  macos-dmg:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: gobuild-macos-dmg-${{ hashFiles('**/go.sum') }}
+          restore-keys: gobuild-macos-dmg-
+
+      - name: Build macOS DMG
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          make mac-dmg VERSION="${VERSION}"
+          ls -lh build/thescanner-macos-*.dmg
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: thescanner-macos-dmg
+          path: build/thescanner-macos-*.dmg
+
+  release:
+    needs: [build, android-apk, macos-dmg]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          append_body: true
+          body: |
+            ## Downloads
+
+            | Platform | Architecture | Download |
+            |----------|-------------|----------|
+            | Linux | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-linux-amd64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-linux-amd64) |
+            | Linux | arm64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-linux-arm64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-linux-arm64) |
+            | macOS | amd64 (Intel) | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-darwin-amd64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-darwin-amd64) |
+            | macOS | arm64 (Apple Silicon) | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-darwin-arm64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-darwin-arm64) |
+            | macOS | universal `.dmg` (drag-install, **recommended**) | [thescanner-macos-${{ github.ref_name }}.dmg - مک (نصب با کشیدن، توصیه‌شده)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-macos-${{ github.ref_name }}.dmg) |
+            | FreeBSD | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-freebsd-amd64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-freebsd-amd64) |
+            | FreeBSD | arm64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-freebsd-arm64) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-freebsd-arm64) |
+            | Windows | amd64 | [server-سرور](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-server-windows-amd64.exe) / [client-کلاینت](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-client-${{ github.ref_name }}-windows-amd64.exe) |
+            | Android | universal (all ABIs, **recommended**) | [thescanner-android-${{ github.ref_name }}-universal.apk - اندروید (یونیورسال، توصیه‌شده)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-universal.apk) |
+            | Android | arm64-v8a (modern phones, smaller) | [thescanner-android-${{ github.ref_name }}-arm64-v8a.apk - اندروید (گوشی‌های جدید)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-arm64-v8a.apk) |
+            | Android | armeabi-v7a (older 32-bit phones) | [thescanner-android-${{ github.ref_name }}-armeabi-v7a.apk - اندروید (دستگاه‌های قدیمی‌تر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-armeabi-v7a.apk) |
+            | Android | x86_64 (Chromebooks, emulators, WSA) | [thescanner-android-${{ github.ref_name }}-x86_64.apk - اندروید (کروم‌بوک، شبیه‌ساز، WSA)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-x86_64.apk) |
+            | Android | x86 (32-bit Intel, niche) | [thescanner-android-${{ github.ref_name }}-x86.apk - اندروید (اینتل ۳۲ بیت، نادر)](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/thescanner-android-${{ github.ref_name }}-x86.apk) |
+
+            **macOS `.dmg` (preview, macOS 11+):** universal Intel + Apple Silicon, unsigned. First launch: right-click → Open, or `xattr -dr com.apple.quarantine /Applications/Thescanner.app`. CLI users can use the bare `thescanner-server` / `thescanner-client` binaries above.

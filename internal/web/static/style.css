@@ -1,0 +1,963 @@
+/* ------- design tokens ------- */
+:root, :root[data-theme="dark"] {
+  --bg: #0e1015;
+  --surface: #161922;
+  --surface-2: #1c2030;
+  --border: #2a2f3c;
+  --fg: #e6e9ef;
+  --muted: #8a92a0;
+  --accent: #6aa0ff;
+  --accent-fg: #0c1018;
+  --ok: #6ed27a;
+  --fail: #ef6a6a;
+  --warn: #f0b95d;
+  --shadow-soft: 0 1px 2px rgba(0,0,0,.3), 0 2px 12px rgba(0,0,0,.25);
+  --shadow-lift: 0 6px 24px rgba(0,0,0,.4);
+  --r-sm: 6px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  /* Translucent surface tokens for sticky bars (header / save-bar /
+     log-panel). Defined per-theme so light mode doesn't keep showing
+     a dark bar on top of light content. */
+  --bar-bg:        rgba(22, 25, 34, .92);
+  --bar-bg-strong: rgba(14, 16, 21, .96);
+  --hover-tint:    rgba(255,255,255,.04);
+}
+:root[data-theme="light"] {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --border: #d6dbe4;
+  --fg: #1a1d24;
+  --muted: #5b6573;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --ok: #16a34a;
+  --fail: #dc2626;
+  --warn: #b45309;
+  --shadow-soft: 0 1px 2px rgba(15,23,42,.06), 0 2px 12px rgba(15,23,42,.06);
+  --shadow-lift: 0 6px 24px rgba(15,23,42,.14);
+  --bar-bg:        rgba(255, 255, 255, .92);
+  --bar-bg-strong: rgba(245, 247, 250, .96);
+  --hover-tint:    rgba(15, 23, 42, .04);
+}
+/* Auto: fall back to OS preference when no explicit theme is set. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --border: #d6dbe4;
+    --fg: #1a1d24;
+    --muted: #5b6573;
+    --accent: #2563eb;
+    --accent-fg: #ffffff;
+    --ok: #16a34a;
+    --fail: #dc2626;
+    --warn: #b45309;
+    --shadow-soft: 0 1px 2px rgba(15,23,42,.06), 0 2px 12px rgba(15,23,42,.06);
+    --shadow-lift: 0 6px 24px rgba(15,23,42,.14);
+    --bar-bg:        rgba(255, 255, 255, .92);
+    --bar-bg-strong: rgba(245, 247, 250, .96);
+    --hover-tint:    rgba(15, 23, 42, .04);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Vazirmatn, "Sahel", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------- header / nav (desktop top-bar + mobile bottom-nav) ------- */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  padding: max(.85rem, env(safe-area-inset-top)) 1.2rem .85rem;
+  background: var(--bar-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+[dir="rtl"] header { flex-direction: row-reverse; }
+.brand { color: var(--accent); font-size: 1.1rem; letter-spacing: .03em; }
+
+#nav-main { display: flex; gap: .25rem; flex: 1; }
+[dir="rtl"] #nav-main { justify-content: flex-end; }
+#nav-main a {
+  color: var(--muted);
+  text-decoration: none;
+  padding: .5rem .9rem;
+  border-radius: 999px;
+  font-size: .9rem;
+  font-weight: 500;
+  transition: background .15s, color .15s;
+}
+#nav-main a:hover  { color: var(--fg); background: rgba(106,160,255,.08); }
+#nav-main a.active { color: var(--accent); background: rgba(106,160,255,.14); }
+
+/* Bottom nav — phone-only, safe-area-padded. */
+#nav-bottom {
+  display: none;
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--bar-bg);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom));
+}
+#nav-bottom a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: .35rem .2rem;
+  border-radius: var(--r-md);
+  font-size: .7rem;
+  line-height: 1.1;
+  font-weight: 500;
+  transition: color .15s, background .15s;
+  min-height: 48px; /* WCAG-ish target size */
+}
+#nav-bottom a svg { width: 22px; height: 22px; flex: 0 0 22px; }
+#nav-bottom a:hover  { color: var(--fg); }
+#nav-bottom a.active { color: var(--accent); background: rgba(106,160,255,.14); }
+
+@media (max-width: 640px) {
+  header { gap: .6rem; }
+  #nav-main { display: none; }
+  #nav-bottom { display: flex; }
+}
+
+main {
+  padding: 1.5rem 1rem 6rem;
+  max-width: 760px;
+  margin: 0 auto;
+  /* Reserve room for the bottom nav on phones — height of the bar
+     (~58px) plus its safe-area inset. */
+}
+@media (max-width: 640px) {
+  main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+}
+
+/* ------- cards ------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.4rem 1.4rem 1.2rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+.card h2 { margin: 0 0 1rem; font-size: 1rem; font-weight: 600; letter-spacing: .02em; }
+fieldset { border: 0; padding: 0; margin: 0 0 1.4rem; }
+fieldset legend {
+  padding: 0;
+  margin-bottom: .8rem;
+  color: var(--muted);
+  font-size: .8rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ------- form fields (label above, then input) ------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  margin: .95rem 0;
+}
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--muted);
+  font-size: .8rem;
+  letter-spacing: .02em;
+  line-height: 1.2;
+}
+.field-head label {
+  flex: 1;
+  cursor: default;
+}
+.field input[type=text],
+.field input[type=number],
+.field input[type=password],
+.field select,
+.field textarea {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: .75rem .9rem;
+  font: inherit;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+/* Only selects need `appearance: none` (to suppress the native chevron
+   so our custom one shows). Number inputs MUST use `appearance:
+   textfield` so the inner-spin-button hide below actually fires on
+   Chrome/Safari — `appearance: none` re-enables the spinner in some
+   versions. */
+.field select {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field input[type=number] {
+  -webkit-appearance: textfield;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .88rem;
+  min-height: 5rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(106,160,255,.15);
+}
+/* Custom chevron for selects so RTL/LTR look the same and we control
+   the dropdown affordance. */
+.field select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% + 1px),
+    calc(100% - 12px) calc(50% + 1px);
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+  padding-inline-end: 2rem;
+}
+[dir="rtl"] .field select {
+  background-position: 18px calc(50% + 1px), 12px calc(50% + 1px);
+  padding-inline-end: .9rem;
+  padding-inline-start: 2rem;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .8rem;
+}
+@media (max-width: 540px) {
+  .field-row { grid-template-columns: 1fr; }
+  main { padding: 1rem .8rem 6rem; }
+}
+
+/* ------- toggle switch ------- */
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: .85rem .95rem;
+  margin: 1rem 0;
+}
+.toggle .toggle-label { display: flex; align-items: center; gap: .5rem; font-size: .92rem; }
+.toggle input[type=checkbox] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 44px;
+  height: 26px;
+  background: #2f3548;
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  transition: background .15s;
+  flex-shrink: 0;
+  margin: 0;
+}
+.toggle input[type=checkbox]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--fg);
+  border-radius: 50%;
+  transition: transform .15s, background .15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.toggle input[type=checkbox]:checked { background: var(--accent); }
+.toggle input[type=checkbox]:checked::after {
+  transform: translateX(18px);
+  background: var(--accent-fg);
+}
+[dir="rtl"] .toggle input[type=checkbox]::after { left: auto; right: 3px; }
+[dir="rtl"] .toggle input[type=checkbox]:checked::after { transform: translateX(-18px); }
+
+/* ------- buttons ------- */
+button, .btn, input[type=submit] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 0;
+  border-radius: var(--r-md);
+  padding: .65rem 1.2rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  transition: transform .05s ease, filter .15s, background .15s;
+}
+button:hover, .btn:hover { filter: brightness(1.08); }
+button:active { transform: translateY(1px); }
+button.ghost, .btn.ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+button.ghost:hover, .btn.ghost:hover { background: var(--surface-2); }
+button.danger { background: transparent; color: var(--fail); border: 1px solid var(--border); }
+button.danger:hover { background: rgba(239,106,106,.1); }
+
+.row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .8rem 0; }
+
+/* ------- server rows (compact summary + expandable editor) ------- */
+.server-row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: .6rem;
+  overflow: hidden;
+}
+.server-row .server-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 18px 1fr 2fr 1fr;
+  align-items: center;
+  gap: .8rem;
+  padding: .7rem .9rem;
+  background: transparent;
+  color: var(--fg);
+  border: 0;
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 0;
+}
+.server-row .server-summary:hover { background: rgba(106,160,255,.06); }
+.server-row .sum-chevron {
+  display: inline-block;
+  transition: transform .15s;
+  color: var(--muted);
+  font-size: .9rem;
+}
+[dir="rtl"] .server-row .sum-chevron { transform: rotate(180deg); }
+.server-row[data-expanded="true"] .sum-chevron { transform: rotate(90deg); }
+[dir="rtl"] .server-row[data-expanded="true"] .sum-chevron { transform: rotate(-90deg); }
+.server-row .sum-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-row .sum-domains,
+.server-row .sum-token {
+  font-size: .82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.server-row .sum-token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: end;
+}
+.server-row .server-editor {
+  display: none;
+  padding: 0 .9rem .8rem;
+  border-top: 1px solid var(--border);
+}
+.server-row[data-expanded="true"] .server-editor { display: block; }
+@media (max-width: 540px) {
+  .server-row .server-summary { grid-template-columns: 18px 1fr 1fr; }
+  .server-row .sum-domains { display: none; } /* keep name + token on phone */
+}
+
+/* ------- number input with custom +/- ------- */
+/* Kill the browser-native spin buttons everywhere — we draw our own.
+   Multiple selectors with !important + display:none + zero-size cover:
+   - Chrome / Safari (::-webkit-inner-spin-button)
+   - Older Chrome (::-webkit-outer-spin-button)
+   - Firefox (-moz-appearance: textfield) */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button,
+.num-input input[type=number]::-webkit-inner-spin-button,
+.num-input input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  display: none !important;
+  margin: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+input[type=number],
+.num-input input[type=number] {
+  -webkit-appearance: textfield !important;
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+.num-input {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.num-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(106,160,255,.15);
+}
+.num-input input[type=number] {
+  border: 0;
+  background: transparent;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+  padding: .75rem .25rem;
+  box-shadow: none !important;
+}
+.num-input input[type=number]:focus { box-shadow: none; }
+.num-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  width: 2.6rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+  border-radius: 0;
+}
+.num-btn:hover { background: var(--hover-tint); color: var(--fg); }
+.num-btn:active { background: var(--hover-tint); }
+.num-btn.num-dec { border-inline-end: 1px solid var(--border); }
+.num-btn.num-inc { border-inline-start: 1px solid var(--border); }
+
+/* ------- back link + progress card ------- */
+.back-link {
+  margin: -.4rem 0 .7rem;
+}
+.back-link a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .88rem;
+  padding: .3rem .6rem;
+  border-radius: 6px;
+  display: inline-block;
+}
+.back-link a:hover { color: var(--accent); background: rgba(106,160,255,.08); }
+[dir="rtl"] .back-link a::before {
+  content: "→";
+  display: inline-block;
+  margin-inline-end: .3rem;
+}
+[dir="ltr"] .back-link a::before {
+  content: "←";
+  display: inline-block;
+  margin-inline-end: .3rem;
+}
+/* The arrow already lives in the i18n strings ("← Back to lists"), so
+   strip our injected one when the label provides it. */
+.back-link a[data-i18n] { /* still uses the inline arrow */ }
+
+.progress-row { margin-bottom: 1rem; }
+.progress-row:last-of-type { margin-bottom: 0; }
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: .35rem;
+}
+.progress-title {
+  font-size: .9rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.progress-pct {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.progress-counters {
+  margin-top: .45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.progress-counters strong { color: var(--fg); }
+.progress-counters strong.ok   { color: var(--ok); }
+.progress-counters strong.fail { color: var(--fail); }
+
+#progress-card progress {
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+}
+
+.settings-summary {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: .8rem;
+}
+.settings-summary summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .85rem;
+  letter-spacing: .04em;
+  user-select: none;
+}
+.settings-summary summary:hover { color: var(--fg); }
+.settings-body {
+  margin-top: .7rem;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .3rem 1rem;
+  font-size: .85rem;
+}
+.settings-body .k { color: var(--muted); }
+.settings-body .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ------- prose cards (about / privacy) ------- */
+.prose h3 { margin-top: 1.4rem; font-size: .95rem; }
+.prose p, .prose li { line-height: 1.6; }
+.prose ul { padding-inline-start: 1.2rem; }
+.prose a { color: var(--accent); text-decoration: none; }
+.prose a:hover { text-decoration: underline; }
+.prose .muted { color: var(--muted); font-size: .9rem; }
+.prose code {
+  background: var(--surface-2);
+  padding: .1rem .35rem;
+  border-radius: 4px;
+  font-size: .88rem;
+  font-family: ui-monospace, monospace;
+}
+
+/* ------- empty state ------- */
+.empty-state h2 {
+  margin: 0 0 .4rem;
+  color: var(--fg);
+}
+.empty-state .btn { margin-top: .4rem; }
+
+/* ------- first-run language picker ------- */
+.lang-picker-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.78);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.lang-picker-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 2.2rem 2rem 1.6rem;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-lift);
+}
+.lang-picker-box h1 {
+  margin: 0 0 .3rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.lang-picker-box .lp-fa { color: var(--muted); font-weight: 400; margin-bottom: 1.6rem; }
+.lang-picker-buttons {
+  display: flex;
+  gap: .8rem;
+  margin-top: .8rem;
+}
+.lang-picker-buttons button {
+  flex: 1;
+  padding: 1rem 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.lang-picker-buttons button[data-lang="fa"] {
+  font-family: -apple-system, BlinkMacSystemFont, Vazirmatn, Tahoma, sans-serif;
+}
+.lang-picker-err {
+  color: var(--fail);
+  font-size: .85rem;
+  min-height: 1.2em;
+  margin-top: .9rem;
+}
+
+/* ------- live log (sticky bottom panel) ------- */
+.log-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bar-bg-strong);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  z-index: 90;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .78rem;
+  box-shadow: var(--shadow-lift);
+  /* On desktop the panel sits flush with the viewport bottom; on
+     phones the bottom-nav lives there, so we float the log above it. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (max-width: 640px) {
+  .log-panel {
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: 0;
+  }
+}
+.log-panel[data-collapsed="true"] .log-body { display: none; }
+.log-panel[data-collapsed="true"] .log-toggle { transform: rotate(180deg); }
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .35rem .9rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.log-head .log-title { font-weight: 600; color: var(--fg); font-size: .8rem; }
+.log-head .log-count {
+  background: var(--surface-2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0 .55rem;
+  font-size: .7rem;
+}
+.log-head .log-clear,
+.log-head .log-toggle {
+  margin-inline-start: auto;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: .8rem;
+  padding: .2rem .6rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.log-head .log-clear:hover, .log-head .log-toggle:hover { background: var(--hover-tint); color: var(--fg); }
+.log-head .log-toggle { margin-inline-start: 0; transition: transform .15s; }
+.log-body {
+  max-height: 28vh;
+  overflow-y: auto;
+  padding: .35rem .9rem .55rem;
+}
+/* Allow horizontal scroll so users can see the full qname (some base32
+   labels run >200 chars). Each line stretches to its content width;
+   the log-body owns the scrollbar. */
+.log-body { overflow-x: auto; }
+.log-body .log-line {
+  display: grid;
+  grid-template-columns: 7ch 7ch 15ch 6ch 9ch max-content;
+  gap: .6rem;
+  align-items: center;
+  padding: 1px 0;
+  white-space: nowrap;
+  /* No overflow:hidden — let .li-extra extend past the viewport so
+     the user can scroll right to see the full domain. */
+}
+.log-body .log-line .lt { color: var(--muted); }
+.log-body .log-line .li-status { font-weight: 700; }
+.log-body .log-line.ok    .li-status { color: var(--ok); }
+.log-body .log-line.fail  .li-status { color: var(--fail); }
+.log-body .log-line .li-ip { overflow: hidden; text-overflow: ellipsis; }
+.log-body .log-line .li-rtt { color: var(--muted); text-align: end; }
+.log-body .log-line .li-len { color: var(--muted); text-align: end; font-variant-numeric: tabular-nums; }
+.log-body .log-line .li-extra { color: var(--muted); }
+/* Lift the rest of the page so the sticky log doesn't cover content. */
+main { padding-bottom: 18vh; }
+
+/* ------- status badges ------- */
+.badge {
+  display: inline-block;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+  vertical-align: middle;
+  margin-inline-start: .5rem;
+}
+.badge-neutral { background: rgba(138,146,160,.18); color: var(--muted); }
+.badge-running { background: rgba(106,160,255,.18); color: var(--accent); }
+.badge-warn    { background: rgba(240,185,93,.18);  color: var(--warn); }
+.badge-ok      { background: rgba(110,210,122,.18); color: var(--ok); }
+.badge-fail    { background: rgba(239,106,106,.18); color: var(--fail); }
+
+/* ------- list cards (lists.html grid) ------- */
+#list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .65rem;
+}
+.list-card {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: .85rem 1rem;
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color .15s, background .15s;
+}
+.list-card:hover { border-color: var(--accent); background: rgba(106,160,255,.04); }
+.list-card .lc-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin-bottom: .3rem;
+}
+.list-card .lc-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-card .lc-meta  { color: var(--muted); font-size: .78rem; }
+.list-card .lc-counts {
+  margin-top: .35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: .85rem;
+}
+
+/* ------- sticky save bar ------- */
+.save-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bar-bg);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  padding: .9rem 1.2rem calc(.9rem + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  z-index: 60;
+  box-shadow: var(--shadow-lift);
+}
+@media (max-width: 640px) {
+  /* Lift the save bar above the bottom-nav so the action button is
+     reachable on phones. */
+  .save-bar {
+    bottom: calc(58px + env(safe-area-inset-bottom));
+    padding-bottom: .9rem;
+  }
+}
+.save-bar .dirty {
+  color: var(--warn);
+  font-size: .85rem;
+  display: none;
+}
+.save-bar.is-dirty .dirty { display: inline; }
+.save-bar .ok-msg { color: var(--ok); font-size: .85rem; }
+/* Hide the whole bar (button included) until the user has changed
+   something. The bar still renders on save-success so the "Saved."
+   confirmation can show. */
+.save-bar:not(.is-dirty):not(.show) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ------- table (results) ------- */
+table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .9rem; }
+th, td { padding: .6rem .5rem; border-bottom: 1px solid var(--border); text-align: start; }
+th { color: var(--muted); font-weight: 500; font-size: .78rem; letter-spacing: .05em; text-transform: uppercase; }
+.status-ok { color: var(--ok); }
+.status-fail { color: var(--fail); }
+
+/* ------- pager ------- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.pager .page-info { color: var(--muted); font-size: .9rem; }
+.pager button { padding: .4rem .8rem; }
+.pager button:disabled { opacity: .35; cursor: not-allowed; }
+
+.tag-subnet {
+  display: inline-block;
+  background: rgba(106,160,255,.15);
+  color: var(--accent);
+  font-size: .65rem;
+  padding: 0 .4rem;
+  margin-inline-start: .25rem;
+  border-radius: 999px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+/* ------- progress ------- */
+progress { width: 100%; height: 6px; border-radius: 3px; overflow: hidden; }
+progress::-webkit-progress-bar { background: var(--surface-2); border-radius: 3px; }
+progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; }
+progress::-moz-progress-bar { background: var(--accent); }
+
+/* ------- info link + modal ------- */
+/* `.i` started life as a circular (ⓘ) icon but the glyph reads awkwardly
+   in Persian. It's now a low-emphasis text link ("info" / "توضیحات")
+   sitting next to the label. */
+.i {
+  display: inline;
+  padding: 0 .2rem;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 400;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  line-height: 1;
+  vertical-align: baseline;
+}
+.i:hover { color: var(--accent); }
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+.help-modal[hidden] { display: none; }
+.help-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.4rem 1.5rem;
+  max-width: 520px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: auto;
+  position: relative;
+  box-shadow: var(--shadow-lift);
+}
+.help-box h3 {
+  margin: 0 0 1rem;
+  font-size: .9rem;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+}
+.help-box .help-en, .help-box .help-fa { margin-bottom: 1rem; }
+.help-box strong {
+  display: inline-block;
+  color: var(--muted);
+  font-size: .7rem;
+  letter-spacing: .1em;
+  margin-bottom: .3rem;
+}
+.help-box p { margin: 0; line-height: 1.55; }
+.help-close {
+  position: absolute;
+  top: .5rem;
+  inset-inline-end: .8rem;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: .2rem .5rem;
+  border-radius: var(--r-sm);
+}
+.help-close:hover { color: var(--fg); background: var(--surface-2); }
+
+/* ------- "newer version available" banner (top of page) ------- */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  padding: .55rem 1rem;
+  background: var(--surface-2);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  font-size: .85rem;
+}
+.update-bar a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.update-bar a:hover { text-decoration: underline; }
+.update-bar button {
+  margin-inline-start: auto;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 .3rem;
+  line-height: 1;
+}
+.update-bar button:hover { color: var(--fg); }
+
+/* ------- inline error / status banner (replaces alert) ------- */
+.flash {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  inset-inline: 1rem;
+  margin-inline: auto;
+  max-width: 32rem;
+  padding: .7rem 1rem;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lift);
+  z-index: 200;
+  font-size: .9rem;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(-150%);
+  transition: opacity .2s ease, transform .25s ease;
+  pointer-events: none;
+}
+.flash.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.flash-fail { background: var(--fail); color: #fff; }
+.flash-ok   { background: var(--ok);   color: #0c1018; }
+.flash-warn { background: var(--warn); color: #0c1018; }

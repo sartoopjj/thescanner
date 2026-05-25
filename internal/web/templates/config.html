@@ -1,0 +1,218 @@
+{{define "config.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <form id="config-form">
+    <section class="card">
+      <h2 data-i18n="config.servers">Scanner-servers</h2>
+      <div id="server-list"></div>
+      <div class="row">
+        <button type="button" id="add-server" class="ghost" data-i18n="config.add_server">Add server</button>
+        <button type="button" id="import-uri" class="ghost" data-i18n="config.import_uri">Import URI</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="config.scan">Scan parameters</h2>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.min_query">Min query size (bytes, a.k.a. MTU)</label>
+            <button type="button" class="i" data-help="scan.min_query">i</button>
+          </div>
+          <input name="scan.min_query" type="number" min="11">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.max_query">Max query size (bytes, a.k.a. MTU)</label>
+            <button type="button" class="i" data-help="scan.max_query">i</button>
+          </div>
+          <input name="scan.max_query" type="number" max="250">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.min_response">Min response size (bytes, a.k.a. MTU)</label>
+            <button type="button" class="i" data-help="scan.min_response">i</button>
+          </div>
+          <input name="scan.min_response" type="number">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.max_response">Max response size (bytes, a.k.a. MTU)</label>
+            <button type="button" class="i" data-help="scan.max_response">i</button>
+          </div>
+          <input name="scan.max_response" type="number">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.parallel">Parallel</label>
+            <button type="button" class="i" data-help="scan.parallel">i</button>
+          </div>
+          <input name="scan.parallel" type="number" min="1">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.duplicate">Duplicate per attempt</label>
+            <button type="button" class="i" data-help="scan.duplicate">i</button>
+          </div>
+          <input name="scan.duplicate" type="number" min="1">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.timeout_seconds">Timeout (seconds)</label>
+            <button type="button" class="i" data-help="scan.timeout_seconds">i</button>
+          </div>
+          <input name="scan.timeout_seconds" type="number" min="1">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.retries">Retries per IP</label>
+            <button type="button" class="i" data-help="scan.retries">i</button>
+          </div>
+          <input name="scan.retries" type="number" min="1" max="10">
+        </div>
+      </div>
+
+      <div class="toggle">
+        <div class="toggle-label">
+          <span data-i18n="field.edns0">EDNS0</span>
+          <button type="button" class="i" data-help="scan.edns0">i</button>
+        </div>
+        <input name="scan.edns0" type="checkbox">
+      </div>
+
+      <div class="toggle">
+        <div class="toggle-label">
+          <span data-i18n="field.noise_enabled">Cover-traffic noise</span>
+          <button type="button" class="i" data-help="scan.noise_enabled">i</button>
+        </div>
+        <input name="scan.noise_enabled" type="checkbox">
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label data-i18n="field.noise_every">Noise rate (1 per N)</label>
+          <button type="button" class="i" data-help="scan.noise_every">i</button>
+        </div>
+        <input name="scan.noise_every" type="number" min="5" max="500">
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="config.subnet">Subnet expansion</h2>
+      <div class="toggle">
+        <div class="toggle-label">
+          <span data-i18n="field.subnet_expand">Auto-scan /24 of OK IPs</span>
+          <button type="button" class="i" data-help="scan.subnet_expand">i</button>
+        </div>
+        <input name="scan.subnet_expand" type="checkbox">
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label data-i18n="field.subnet_mask">Subnet mask (/CIDR)</label>
+          <button type="button" class="i" data-help="scan.subnet_mask">i</button>
+        </div>
+        <input name="scan.subnet_mask" type="number" min="16" max="32">
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="config.level2">Level 2</h2>
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.queries_per_resolver">Queries per resolver</label>
+            <button type="button" class="i" data-help="level2.queries_per_resolver">i</button>
+          </div>
+          <input name="level2.queries_per_resolver" type="number" min="1">
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label data-i18n="field.l2_parallel">Parallel</label>
+            <button type="button" class="i" data-help="level2.parallel">i</button>
+          </div>
+          <input name="level2.parallel" type="number" min="1">
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 data-i18n="config.ui">UI</h2>
+      <div class="field">
+        <div class="field-head">
+          <label data-i18n="field.listen">UI listen address</label>
+          <button type="button" class="i" data-help="ui.listen">i</button>
+        </div>
+        <input name="ui.listen" type="text">
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label data-i18n="field.language">Language</label>
+          <button type="button" class="i" data-help="ui.language">i</button>
+        </div>
+        <select name="ui.language">
+          <option value="en">English</option>
+          <option value="fa">فارسی</option>
+        </select>
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label data-i18n="field.theme">Theme</label>
+        </div>
+        <select name="ui.theme">
+          <option value="auto"  data-i18n="theme.auto">Auto (system)</option>
+          <option value="dark"  data-i18n="theme.dark">Dark</option>
+          <option value="light" data-i18n="theme.light">Light</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <button type="button" id="inline-save" style="width:100%;" data-i18n="config.save">Save</button>
+    </section>
+  </form>
+</main>
+
+<div id="uri-import-modal" class="help-modal" hidden>
+  <div class="help-box">
+    <button type="button" class="help-close" id="uri-import-cancel-x" aria-label="close">×</button>
+    <h3 data-i18n="config.import_uri">Import URI</h3>
+    <p style="color:var(--muted);font-size:.85rem;margin:0 0 .8rem;" data-i18n="config.import_uri_prompt">Paste a thescanner:// URI</p>
+    <textarea id="uri-import-input" rows="3" style="width:100%;background:var(--surface-2);color:var(--fg);border:1px solid var(--border);border-radius:var(--r-md);padding:.7rem .9rem;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;" placeholder="thescanner://server?name=...&token=...&domains=..."></textarea>
+    <p id="uri-import-error" style="color:var(--fail);font-size:.85rem;margin:.6rem 0 0;min-height:1.2em;"></p>
+    <div class="row" style="margin-top:.8rem;justify-content:flex-end;">
+      <button type="button" class="ghost" id="uri-import-cancel" data-i18n="config.cancel">Cancel</button>
+      <button type="button" id="uri-import-ok" data-i18n="config.import_uri_ok">Import</button>
+    </div>
+  </div>
+</div>
+
+<div class="save-bar" id="save-bar">
+  <span class="dirty" data-i18n="config.unsaved">Unsaved changes</span>
+  <span class="ok-msg" id="config-saved-msg"></span>
+  <button type="button" id="save-btn" data-i18n="config.save">Save</button>
+</div>
+
+<div id="help-modal" class="help-modal" hidden>
+  <div class="help-box">
+    <button type="button" class="help-close" aria-label="close">×</button>
+    <h3 id="help-title"></h3>
+    <div class="help-en"><strong>EN</strong><p id="help-en-text"></p></div>
+    <div class="help-fa" dir="rtl"><strong>FA</strong><p id="help-fa-text"></p></div>
+  </div>
+</div>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

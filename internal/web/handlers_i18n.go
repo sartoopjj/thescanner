@@ -1,0 +1,497 @@
+package web
+
+import "net/http"
+
+// apiI18n returns the UI string bundle for the requested language.
+// The "chosen" flag is false when the user has never explicitly picked
+// a language — the frontend uses that to show a first-run picker.
+func (s *Server) apiI18n(w http.ResponseWriter, r *http.Request) {
+	chosen := s.cfg.Snapshot().UI.Language != ""
+	lang := r.URL.Query().Get("lang")
+	if lang == "" {
+		lang = s.cfg.Snapshot().UI.Language
+	}
+	if lang != "fa" {
+		lang = "en"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"lang":    lang,
+		"chosen":  chosen,
+		"strings": i18nBundles[lang],
+	})
+}
+
+// apiHelp returns the bilingual help bundle; the info modal always shows
+// both languages side-by-side.
+func (s *Server) apiHelp(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, helpBundle)
+}
+
+var i18nBundles = map[string]map[string]string{
+	"en": {
+		"app.title":   "thescanner",
+		"nav.scan":    "Scan",
+		"nav.lists":   "Lists",
+		"nav.config":  "Config",
+		"nav.about":   "About",
+
+		"about.title":         "About thescanner",
+		"about.intro":         "thescanner finds public DNS resolvers that cleanly forward authenticated queries to a server you control. It's used as plumbing for downstream DNS-tunneling projects.",
+		"about.architecture":  "Architecture",
+		"about.arch_body":     "There are two halves to thescanner. The client is what you're using right now — it runs on your laptop or phone, sweeps resolver lists, and shows the results. The server is a small DNS daemon that you deploy on a host with a public domain. The client only talks to resolvers via your own server, so your scans never depend on a shared service.",
+		"about.server":        "Running your own scanner-server",
+		"about.server_body":   "You need a Linux/FreeBSD host, a domain whose NS records you control, and one open port (UDP/TCP 53, or any unprivileged port via an iptables redirect). The README has a curl-installable script. Once it's up, the client UI can import a thescanner:// URI emitted by the server's stats endpoint and you're ready to scan.",
+		"about.repo":          "Source & releases",
+		"about.donate":        "Sponsor",
+		"about.donate_body":   "thescanner is free and open-source. If it's been useful to you, you can sponsor development through GitHub Sponsors or the links in the README — entirely optional.",
+		"about.privacy":       "Privacy",
+		"about.privacy_link":  "Read the privacy policy →",
+
+		"privacy.title":             "Privacy",
+		"privacy.tldr":              "TL;DR: thescanner keeps every byte of your data on the device that runs it. No analytics, no telemetry, no third-party SDKs.",
+		"privacy.data_title":        "What's stored locally",
+		"privacy.data_config":       "Your scanner-server endpoints, tokens, and scan settings — under the app's private data directory.",
+		"privacy.data_lists":        "Each scan you start is saved as a JSON file containing the IPs you supplied plus their per-resolver test results.",
+		"privacy.data_logs":         "A short in-memory ring of recent log lines for the live-log pane. Not persisted to disk.",
+		"privacy.data_sent_title":   "What's sent over the network",
+		"privacy.data_sent_dns":     "DNS queries to the resolvers you chose to scan. The queries are encrypted with the shared token of the scanner-server you chose to talk to.",
+		"privacy.data_sent_noise":   "Optional 'cover-traffic' DNS lookups to well-known public hostnames (google.com, wikipedia.org, …) when noise is enabled. Off by setting scan.noise_enabled = false.",
+		"privacy.no_telemetry_title": "No telemetry",
+		"privacy.no_telemetry_body": "thescanner does not phone home. It contains no analytics SDKs, no crash-reporting SDKs, and no advertising IDs. Updates are not auto-fetched; the app checks GitHub for new releases only when you ask it to.",
+		"privacy.permissions_title": "Permissions",
+		"privacy.permissions_body":  "The mobile builds use only the Internet permission. They don't request the camera, microphone, contacts, photos, or location.",
+		"privacy.contact_title":     "Questions or removal requests",
+		"privacy.contact_body":      "File an issue at the GitHub repo linked from About.",
+
+		// scan page (create-list form)
+		"scan.title":         "Run a scan",
+		"scan.kind":          "Scan kind",
+		"scan.kind_shallow":  "Shallow scan",
+		"scan.kind_manual":   "Deep scan (skip shallow — tip: run a shallow scan first and feed only the live resolvers to a deep scan to score them)",
+		"scan.name":          "List name (optional)",
+		"scan.server":        "Server",
+		"scan.resolvers":     "Resolvers (one IP or CIDR per line)",
+		"scan.start":         "Start",
+		"scan.create_only":   "Save without scanning",
+		"scan.create_manual": "Create list",
+		"scan.pause":         "Pause",
+		"scan.resume":        "Resume",
+		"scan.import":           "Import file",
+		"scan.export_resolvers": "Export list",
+		"scan.clear":            "Clear",
+		"scan.confirm_clear":    "Clear all {n} resolvers?",
+		"scan.no_ips_in_file":   "no IPs found in file",
+		"scan.no_servers_title": "No scanner-server configured",
+		"scan.no_servers_body":  "Add a scanner-server endpoint (its domain + token) before you can run a scan. You can paste a thescanner:// URI on the settings page if someone shared one with you.",
+		"scan.go_to_config":     "Open settings",
+
+		// lists page
+		"lists.title":           "Lists",
+		"lists.empty_title":     "No scans yet",
+		"lists.empty_body":      "Start a new shallow scan or build a manual list from IPs you already trust.",
+		"lists.go_scan":         "Start a scan",
+		"lists.new_scan":        "New scan",
+		"lists.new_manual":      "New manual list",
+		"lists.delete_old":      "Delete older than…",
+		"lists.delete_old_body": "Lists last updated before this date will be removed. The currently-running list (if any) is also affected, so pause it first.",
+		"lists.delete_confirm":  "Delete",
+		"lists.deleted_n":       "Deleted {n} list(s).",
+		"lists.col_total":       "Total",
+		"lists.col_l2":          "Deep-scored",
+		"lists.kind_shallow":    "shallow scan",
+		"lists.kind_manual":     "manual",
+		"lists.kind_label":     "Kind",
+		"lists.back":           "Back to lists",
+		"lists.s_pending":       "pending",
+		"lists.s_scanning":      "scanning",
+		"lists.s_paused":        "paused",
+		"lists.s_done":          "completed",
+		"lists.s_deep":          "deep scanning",
+		"lists.s_deep_done":     "deep done",
+		"lists.s_active":        "active",
+		"lists.run_deep":        "Run deep scan",
+		"lists.rescan_ok":       "Rescan OK only",
+		"lists.rescan_all":      "Rescan all",
+		"lists.rename":          "Rename",
+		"lists.confirm_delete":  "Delete this list? This cannot be undone.",
+
+		// results columns
+		"results.title":      "Results",
+		"results.filter":     "Filter",
+		"results.all":        "All",
+		"results.ok":         "OK",
+		"results.fail":       "Failed",
+		"results.export":     "Export OK IPs (.txt)",
+		"results.exportCSV":  "Export all (.csv)",
+		"results.search":     "Search IP",
+		"results.page_size":  "Per page",
+		"results.col_status": "Status",
+		"results.col_rtt":    "RTT",
+		"results.col_l2_ok":  "L2 ok",
+		"results.col_l2_p95": "L2 p95",
+		"results.col_score":  "Score",
+		"results.col_src":    "Src",
+
+		"log.title":          "Live log",
+		"log.clear":          "Clear",
+
+		// config page
+		"config.title":            "Configuration",
+		"config.servers":          "Scanner-servers",
+		"config.add_server":       "Add server manually",
+		"config.import_uri":       "Import URI",
+		"config.import_uri_prompt": "Paste a thescanner:// URI",
+		"config.import_uri_bad":   "Invalid URI — expected thescanner://...",
+		"config.import_uri_ok":    "Import",
+		"config.cancel":           "Cancel",
+		"config.copy_uri":         "Copy URI",
+		"config.uri_copied":       "Copied.",
+		"config.remove":           "Remove",
+		"config.scan":             "Scan parameters",
+		"config.level2":           "Deep scan",
+		"config.ui":               "UI",
+		"config.subnet":           "Subnet expansion",
+		"config.save":             "Save",
+		"config.saved":            "Saved.",
+		"config.unsaved":          "Unsaved changes",
+
+		// server-row labels
+		"field.server.name":    "Name",
+		"field.server.domains": "Domains (one per line)",
+		"field.server.token":   "Token",
+
+		// scan params
+		"field.min_query":       "Min query size (bytes, a.k.a. MTU)",
+		"field.max_query":       "Max query size (bytes, a.k.a. MTU)",
+		"field.min_response":    "Min response size (bytes, a.k.a. MTU)",
+		"field.max_response":    "Max response size (bytes, a.k.a. MTU)",
+		"field.parallel":        "Parallel",
+		"field.duplicate":       "Duplicate per attempt",
+		"field.timeout_seconds": "Timeout (seconds)",
+		"field.retries":         "Retries per IP",
+		"field.edns0":           "EDNS0",
+		"field.noise_enabled":   "Cover-traffic noise",
+		"field.noise_every":     "Noise rate (1 per N)",
+
+		// (i) buttons now render as small text, not a circle.
+		"common.info":             "info",
+		"common.download":         "Download",
+		"common.on":               "on",
+		"common.off":              "off",
+		"results.sub_ms":          "<1ms",
+		"common.update_available": "Version {latest} is available. You're on {current}.",
+
+		// Compact labels used in the "settings in use" summary on /list.
+		"settings_summary.scan.min_query":          "min query (B / MTU)",
+		"settings_summary.scan.max_query":          "max query (B / MTU)",
+		"settings_summary.scan.min_response":       "min response (B / MTU)",
+		"settings_summary.scan.max_response":       "max response (B / MTU)",
+		"settings_summary.scan.parallel":           "parallel",
+		"settings_summary.scan.duplicate":          "duplicate",
+		"settings_summary.scan.timeout_seconds":    "timeout (s)",
+		"settings_summary.scan.retries":            "retries",
+		"settings_summary.scan.edns0":              "EDNS0",
+		"settings_summary.scan.subnet_expand":      "subnet expand",
+		"settings_summary.l2.queries_per_resolver": "deep: queries / resolver",
+		"settings_summary.l2.parallel":             "deep: parallel",
+
+		// Inline error banners (replace browser alert()).
+		"err.no_ok_ips":           "No live resolvers to deep-scan yet. Run a shallow scan first, then deep-scan the OK ones for scoring.",
+		"err.server_not_found":    "The server this list was associated with is no longer in your configuration.",
+		"err.scan_already_running": "A scan is already running. Pause it first or wait until it finishes.",
+		"err.scan_state_conflict": "This list is not in a state where that action is allowed.",
+		"err.unknown":             "Something went wrong. Check the log panel for details.",
+
+		// subnet
+		"field.subnet_expand": "Auto-scan /24 of OK IPs",
+		"field.subnet_mask":   "Subnet mask (/CIDR)",
+
+		// deep
+		"field.queries_per_resolver": "Queries per resolver",
+		"field.l2_parallel":          "Parallel",
+
+		// UI
+		"field.listen":   "UI listen address",
+		"field.language": "Language",
+		"field.theme":    "Theme",
+		"theme.auto":     "Auto (system)",
+		"theme.dark":     "Dark",
+		"theme.light":    "Light",
+
+		"lists.progress":         "Progress",
+		"lists.shallow_progress": "Shallow scan",
+		"lists.elapsed":          "Elapsed",
+		"lists.eta":              "ETA",
+		"lists.settings_used":    "Scan settings in use",
+	},
+
+	"fa": {
+		"app.title":  "thescanner",
+		"nav.scan":   "اسکن",
+		"nav.lists":  "لیست‌ها",
+		"nav.config": "تنظیمات",
+		"nav.about":  "درباره",
+
+		"about.title":         "درباره‌ی thescanner",
+		"about.intro":         "thescanner ریزالورهای DNS عمومی را پیدا می‌کند که کوئری‌های احراز هویت‌شده را بدون دستکاری به سروری که خودتان کنترل می‌کنید می‌رسانند. زیرساختی برای پروژه‌های تونلینگ DNS.",
+		"about.architecture":  "معماری",
+		"about.arch_body":     "thescanner دو نیمه دارد. کلاینت همین چیزی است که الان از آن استفاده می‌کنید — روی لپ‌تاپ یا گوشی شما اجرا می‌شود، لیست ریزالورها را اسکن می‌کند و نتایج را نشان می‌دهد. سرور یک سرویس کوچک DNS است که خودتان روی هاستی با دامنه‌ی عمومی نصب می‌کنید. کلاینت فقط از طریق سرور خودتان با ریزالورها صحبت می‌کند، پس اسکن‌های شما هرگز به یک سرویس مشترک وابسته نیست.",
+		"about.server":        "اجرای سرور اسکنر خودتان",
+		"about.server_body":   "نیاز دارید: یک هاست لینوکس/FreeBSD، یک دامنه که رکوردهای NS آن را در اختیار دارید، و یک پورت باز (UDP/TCP 53 یا هر پورت غیر-ریشه با ریدایرکت iptables). README یک اسکریپت curl-installable دارد. وقتی بالا آمد، رابط کاربری کلاینت می‌تواند یک URI با فرمت thescanner:// را که از endpoint آمار سرور می‌آید ایمپورت کند و آماده‌ی اسکن هستید.",
+		"about.repo":          "سورس و ریلیزها",
+		"about.donate":        "حمایت",
+		"about.donate_body":   "این پروژه رایگان و متن‌باز است. اگر برایتان مفید بوده می‌توانید از طریق Sponsors گیت‌هاب یا لینک‌های موجود در README از توسعه‌اش حمایت کنید — کاملاً اختیاری است.",
+		"about.privacy":       "حریم خصوصی",
+		"about.privacy_link":  "خواندن سیاست حریم خصوصی ←",
+
+		"privacy.title":             "حریم خصوصی",
+		"privacy.tldr":              "خلاصه: thescanner تمام داده‌های شما را روی همین دستگاه نگه می‌دارد. آنالیتیکس، تله‌متری یا SDK شخص ثالث ندارد.",
+		"privacy.data_title":        "چه چیزی به‌صورت محلی ذخیره می‌شود",
+		"privacy.data_config":       "اِندپوینت‌های سرور اسکنر شما، توکن‌ها و تنظیمات اسکن — در دایرکتوری خصوصی برنامه.",
+		"privacy.data_lists":        "هر اسکنی که شروع می‌کنید به‌عنوان یک فایل JSON ذخیره می‌شود که شامل IPهایی که داده‌اید و نتیجه‌ی تست هر ریزالور است.",
+		"privacy.data_logs":         "یک حلقه‌ی کوتاه از سطرهای لاگ اخیر در حافظه برای پنل لاگ زنده. روی دیسک ذخیره نمی‌شود.",
+		"privacy.data_sent_title":   "چه چیزی روی شبکه فرستاده می‌شود",
+		"privacy.data_sent_dns":     "کوئری‌های DNS به ریزالورهایی که خودتان انتخاب کرده‌اید. این کوئری‌ها با توکن مشترک سرور اسکنری که خودتان انتخاب کرده‌اید رمز می‌شوند.",
+		"privacy.data_sent_noise":   "اگر نویز روشن باشد، کوئری‌های DNS «پوششی» اختیاری به دامنه‌های عمومی شناخته‌شده (google.com، wikipedia.org، …). با گذاشتن scan.noise_enabled = false خاموش می‌شود.",
+		"privacy.no_telemetry_title": "بدون تله‌متری",
+		"privacy.no_telemetry_body": "thescanner هیچ اطلاعاتی را به سرور ما یا هیچ سرور دیگری گزارش نمی‌کند. SDK آنالیتیکس، گزارش کرش یا شناسه‌ی تبلیغاتی ندارد. به‌روزرسانی‌ها خودکار دانلود نمی‌شوند؛ برنامه فقط وقتی شما بخواهید گیت‌هاب را برای ریلیز جدید بررسی می‌کند.",
+		"privacy.permissions_title": "دسترسی‌ها",
+		"privacy.permissions_body":  "بیلدهای موبایل فقط از Internet استفاده می‌کنند. دوربین، میکروفون، مخاطبین، عکس‌ها یا موقعیت مکانی درخواست نمی‌شود.",
+		"privacy.contact_title":     "سؤال یا درخواست حذف",
+		"privacy.contact_body":      "در ریپازیتوری گیت‌هاب (لینک در صفحه‌ی درباره) یک issue باز کنید.",
+
+		"scan.title":         "اجرای اسکن",
+		"scan.kind":          "نوع اسکن",
+		"scan.kind_shallow":  "اسکن سطحی",
+		"scan.kind_manual":   "اسکن عمیق (بدون مرحله‌ی سطحی — توصیه: اول یک اسکن سطحی بزنید و فقط ریزالورهای فعال را وارد اسکن عمیق کنید تا امتیازدهی روی نتایج واقعی انجام شود)",
+		"scan.name":          "نام لیست (اختیاری)",
+		"scan.server":        "سرور",
+		"scan.resolvers":     "ریزالورها (هر سطر یک IP یا CIDR)",
+		"scan.start":         "شروع",
+		"scan.create_only":   "ذخیره بدون اسکن",
+		"scan.create_manual": "ساخت لیست",
+		"scan.pause":         "توقف",
+		"scan.resume":        "ادامه",
+		"scan.import":           "ایمپورت از فایل",
+		"scan.export_resolvers": "خروجی لیست",
+		"scan.clear":            "پاک کردن",
+		"scan.confirm_clear":    "پاک کردن همه‌ی {n} ریزالور؟",
+		"scan.no_ips_in_file":   "هیچ IP معتبری در فایل پیدا نشد",
+		"scan.no_servers_title": "هیچ سرور اسکنری تنظیم نشده است",
+		"scan.no_servers_body":  "قبل از اجرای اسکن، یک اِندپوینت سرور اسکنر (دامنه + توکن) اضافه کنید. اگر کسی برایتان یک URI با فرمت thescanner:// فرستاده، می‌توانید آن را در صفحه‌ی تنظیمات وارد کنید.",
+		"scan.go_to_config":     "باز کردن تنظیمات",
+
+		"lists.title":           "لیست‌ها",
+		"lists.empty_title":     "هنوز اسکنی انجام نشده",
+		"lists.empty_body":      "یک اسکن سطحی جدید شروع کنید یا از IPهایی که خودتان به آن‌ها اطمینان دارید یک لیست دستی بسازید.",
+		"lists.go_scan":         "شروع اسکن",
+		"lists.new_scan":        "اسکن جدید",
+		"lists.new_manual":      "لیست دستی جدید",
+		"lists.delete_old":      "حذف موارد قدیمی‌تر از…",
+		"lists.delete_old_body": "لیست‌هایی که آخرین تغییرشان پیش از این تاریخ بوده حذف می‌شوند. لیست در حال اجرا (در صورت وجود) هم تحت تأثیر قرار می‌گیرد — اول آن را متوقف کنید.",
+		"lists.delete_confirm":  "حذف",
+		"lists.deleted_n":       "{n} لیست حذف شد.",
+		"lists.col_total":       "کل",
+		"lists.col_l2":          "امتیازدهی عمیق",
+		"lists.kind_shallow":    "اسکن سطحی",
+		"lists.kind_manual":     "دستی",
+		"lists.kind_label":     "نوع",
+		"lists.back":           "بازگشت به لیست‌ها",
+		"lists.s_pending":       "در انتظار",
+		"lists.s_scanning":      "در حال اسکن",
+		"lists.s_paused":        "متوقف",
+		"lists.s_done":          "تمام شده",
+		"lists.s_deep":          "اسکن دقیق",
+		"lists.s_deep_done":     "اسکن دقیق تمام شد",
+		"lists.s_active":        "فعال",
+		"lists.run_deep":        "اجرای اسکن دقیق",
+		"lists.rescan_ok":       "اسکن مجدد فقط موفق‌ها",
+		"lists.rescan_all":      "اسکن مجدد همه",
+		"lists.rename":          "تغییر نام",
+		"lists.confirm_delete":  "این لیست حذف شود؟ این عمل قابل بازگشت نیست.",
+
+		"results.title":      "نتایج",
+		"results.filter":     "فیلتر",
+		"results.all":        "همه",
+		"results.ok":         "موفق",
+		"results.fail":       "ناموفق",
+		"results.export":     "خروجی IPهای موفق (.txt)",
+		"results.exportCSV":  "خروجی همه (.csv)",
+		"results.search":     "جست‌وجوی IP",
+		"results.page_size":  "تعداد در هر صفحه",
+		"results.col_status": "وضعیت",
+		"results.col_rtt":    "زمان پاسخ",
+		"results.col_l2_ok":  "موفق در عمیق",
+		"results.col_l2_p95": "p95 عمیق",
+		"results.col_score":  "امتیاز",
+		"results.col_src":    "منبع",
+
+		"log.title":          "لاگ زنده",
+		"log.clear":          "پاک‌سازی",
+
+		"config.title":            "تنظیمات",
+		"config.servers":          "سرورهای اسکنر",
+		"config.add_server":       "افزودن سرور دستی",
+		"config.import_uri":       "ایمپورت از URI",
+		"config.import_uri_prompt": "یک URI با فرمت thescanner:// را بچسبانید",
+		"config.import_uri_bad":   "URI نامعتبر — باید با thescanner:// شروع شود",
+		"config.import_uri_ok":    "ایمپورت",
+		"config.cancel":           "انصراف",
+		"config.copy_uri":         "کپی URI",
+		"config.uri_copied":       "کپی شد.",
+		"config.remove":           "حذف",
+		"config.scan":             "پارامترهای اسکن",
+		"config.level2":           "اسکن دقیق",
+		"config.ui":               "رابط کاربری",
+		"config.subnet":           "گسترش ساب‌نت",
+		"config.save":             "ذخیره",
+		"config.saved":            "ذخیره شد.",
+		"config.unsaved":          "تغییرات ذخیره‌نشده",
+
+		"field.server.name":    "نام",
+		"field.server.domains": "دامنه‌ها (هر سطر یک دامنه)",
+		"field.server.token":   "توکن",
+
+		"field.min_query":       "حداقل طول کوئری (بایت — همان MTU)",
+		"field.max_query":       "حداکثر طول کوئری (بایت — همان MTU)",
+		"field.min_response":    "حداقل طول پاسخ (بایت — همان MTU)",
+		"field.max_response":    "حداکثر طول پاسخ (بایت — همان MTU)",
+		"field.parallel":        "هم‌زمانی",
+		"field.duplicate":       "کوئری پشت‌سرهم در هر تلاش",
+		"field.timeout_seconds": "تایم‌اوت (ثانیه)",
+		"field.retries":         "تعداد تلاش برای هر IP",
+		"field.edns0":           "EDNS0",
+		"field.noise_enabled":   "ترافیک پوششی (نویز)",
+		"field.noise_every":     "نرخ نویز (۱ از هر N)",
+
+		"common.info":             "توضیحات",
+		"common.download":         "دانلود",
+		"common.on":               "روشن",
+		"common.off":              "خاموش",
+		"results.sub_ms":          "زیر ۱ms",
+		"common.update_available": "نسخه‌ی {latest} منتشر شده — نسخه‌ی فعلی شما {current} است.",
+
+		// خلاصه‌ی تنظیمات استفاده‌شده در صفحه‌ی /list.
+		"settings_summary.scan.min_query":          "حداقل کوئری (بایت / MTU)",
+		"settings_summary.scan.max_query":          "حداکثر کوئری (بایت / MTU)",
+		"settings_summary.scan.min_response":       "حداقل پاسخ (بایت / MTU)",
+		"settings_summary.scan.max_response":       "حداکثر پاسخ (بایت / MTU)",
+		"settings_summary.scan.parallel":           "موازی",
+		"settings_summary.scan.duplicate":          "تکرار",
+		"settings_summary.scan.timeout_seconds":    "تایم‌اوت (ثانیه)",
+		"settings_summary.scan.retries":            "تعداد ریترای",
+		"settings_summary.scan.edns0":              "EDNS0",
+		"settings_summary.scan.subnet_expand":      "گسترش زیرشبکه",
+		"settings_summary.l2.queries_per_resolver": "اسکن عمیق: کوئری به ازای هر ریزالور",
+		"settings_summary.l2.parallel":             "اسکن عمیق: موازی",
+
+		"err.no_ok_ips":           "هنوز ریزالور فعالی برای اسکن عمیق وجود ندارد. اول یک اسکن سطحی بزنید و سپس فقط ریزالورهای OK را برای امتیازدهی به اسکن عمیق بدهید.",
+		"err.server_not_found":    "سروری که این لیست به آن وصل بود دیگر در تنظیمات شما نیست.",
+		"err.scan_already_running": "یک اسکن همین حالا در حال اجراست. اول آن را Pause کنید یا منتظر بمانید تمام شود.",
+		"err.scan_state_conflict": "این لیست در وضعیتی نیست که این عملیات روی آن مجاز باشد.",
+		"err.unknown":             "خطایی پیش آمد. برای جزئیات به پنل لاگ نگاه کنید.",
+
+		"field.subnet_expand": "اسکن خودکار /۲۴ از IPهای موفق",
+		"field.subnet_mask":   "ماسک ساب‌نت (/CIDR)",
+
+		"field.queries_per_resolver": "تعداد کوئری برای هر ریزالور",
+		"field.l2_parallel":          "هم‌زمانی",
+
+		"field.listen":   "آدرس لیسن رابط کاربری",
+		"field.language": "زبان",
+		"field.theme":    "تم",
+		"theme.auto":     "خودکار (سیستم)",
+		"theme.dark":     "تیره",
+		"theme.light":    "روشن",
+
+		"lists.progress":         "پیشرفت",
+		"lists.shallow_progress": "اسکن سطحی",
+		"lists.elapsed":          "زمان سپری‌شده",
+		"lists.eta":              "زمان تخمینی پایان",
+		"lists.settings_used":    "تنظیمات اسکن در حال استفاده",
+	},
+}
+
+// helpBundle: bilingual long-form help text shown by the (i) buttons.
+var helpBundle = map[string]map[string]string{
+	"scan.min_query": {
+		"en": "Minimum query length in bytes (header + random padding). The client picks a random length in [min, max] per query so resolvers can't fingerprint by size.",
+		"fa": "حداقل طول کوئری برحسب بایت (هدر + پدینگ تصادفی). کلاینت برای هر کوئری یک طول تصادفی بین حداقل و حداکثر انتخاب می‌کند تا ریزالورها نتوانند از روی اندازه شناسایی کنند.",
+	},
+	"scan.max_query": {
+		"en": "Maximum query length in bytes. Higher = more random padding (harder to fingerprint), but base32 encoding slows down. Practical cap is about 156 bytes due to DNS-name length limits.",
+		"fa": "حداکثر طول کوئری برحسب بایت. مقدار بزرگ‌تر یعنی پدینگ تصادفی‌تر (سخت‌تر برای فینگرپرینت)، ولی کدگذاری base32 کندتر. سقف عملی حدود ۱۵۶ بایت است به‌خاطر محدودیت طول نام در DNS.",
+	},
+	"scan.min_response": {
+		"en": "Minimum response length in bytes the client requests from the server. Servers clamp this to whatever fits in the EDNS0 budget.",
+		"fa": "حداقل طول پاسخ برحسب بایت که کلاینت از سرور درخواست می‌کند. سرور این مقدار را تا حد بودجه‌ی EDNS0 محدود می‌کند.",
+	},
+	"scan.max_response": {
+		"en": "Maximum response length. Larger responses test whether resolvers forward big TXT records cleanly. 4096 with EDNS0; 480 without.",
+		"fa": "حداکثر طول پاسخ. مقدار بزرگ‌تر بررسی می‌کند که ریزالور رکوردهای TXT بزرگ را درست عبور می‌دهد یا نه. با EDNS0 تا ۴۰۹۶، بدون آن تا ۴۸۰.",
+	},
+	"scan.edns0": {
+		"en": "When on, queries advertise an EDNS0 buffer of 4096 bytes so the server can send big responses. Turn off to test plain-DNS resolvers (512-byte cap).",
+		"fa": "وقتی روشن است، کوئری‌ها بافر ۴۰۹۶ بایتی EDNS0 را اعلام می‌کنند تا سرور بتواند پاسخ بزرگ بفرستد. برای تست ریزالورهای DNS معمولی (سقف ۵۱۲ بایت) خاموشش کنید.",
+	},
+	"scan.parallel": {
+		"en": "How many resolvers are tested at the same time. Higher = faster scan, but more open sockets and more risk of upstream rate-limiting.",
+		"fa": "چند ریزالور هم‌زمان تست شوند. بیشتر یعنی اسکن سریع‌تر، ولی سوکت‌های باز بیشتر و ریسک محدودسازی نرخ از طرف آپ‌استریم.",
+	},
+	"scan.duplicate": {
+		"en": "Back-to-back queries per attempt. 1 is usual. Bump to 2-3 if you suspect transient packet loss on a single try.",
+		"fa": "تعداد کوئری پشت‌سرهم در هر تلاش. معمولاً ۱. اگر گمان می‌کنید در یک تلاش بسته‌ها گم می‌شوند، ۲ یا ۳ بگذارید.",
+	},
+	"scan.timeout_seconds": {
+		"en": "How long to wait for each query before marking it timed out. Slower resolvers need 10+ seconds; tight networks can use 3-5.",
+		"fa": "چقدر برای هر کوئری صبر کنیم تا تایم‌اوت بدهیم. ریزالور کند به ۱۰ ثانیه یا بیشتر نیاز دارد؛ شبکه‌های سریع با ۳ تا ۵ ثانیه کافی است.",
+	},
+	"scan.retries": {
+		"en": "How many times to try each IP in total before giving up. Retries are DEFERRED — after a failure we scan other IPs first, then come back. After this many total attempts, the IP is marked failed.",
+		"fa": "هر IP در مجموع چند بار تست شود تا کنار گذاشته شود. تلاش‌های مجدد تأخیری انجام می‌شوند — بعد از شکست، اول بقیه‌ی IPها اسکن می‌شوند، سپس دوباره به این IP برمی‌گردیم. بعد از این تعداد تلاش کل، IP به‌عنوان ناموفق علامت می‌خورد.",
+	},
+	"scan.noise_enabled": {
+		"en": "When on, the scanner occasionally interleaves a normal-looking DNS lookup (google.com, wikipedia.org, …) between protocol queries so the resolver's view of your traffic is harder to fingerprint as 'pure scanner'. Costs a small amount of extra bandwidth.",
+		"fa": "وقتی روشن است، اسکنر گاه‌گاهی یک کوئری DNS معمولی (google.com، wikipedia.org، …) بین کوئری‌های پروتکل می‌فرستد تا ترافیکی که ریزالور می‌بیند خیلی واضح «اسکنر خالص» به نظر نرسد. هزینه‌اش کمی پهنای‌باند اضافه است.",
+	},
+	"scan.noise_every": {
+		"en": "Roughly one decoy lookup per N real items, but randomised — actual rate is about 1/(2·N) so the cadence isn't periodic. Higher N = less noise. 30 means ~3% extra queries; 5 is heavy. Pick higher when the upstream rate-limits aggressively.",
+		"fa": "تقریباً به ازای هر N آیتم واقعی یک کوئری پوششی، ولی تصادفی — نرخ واقعی نزدیک ۱/(۲·N) است تا الگو تناوبی نباشد. N بزرگ‌تر یعنی نویز کمتر. ۳۰ یعنی حدود ۳٪ کوئری اضافه؛ ۵ یعنی زیاد. اگر آپ‌استریم سخت ریت‌لیمیت می‌کند، N را بالاتر بگذارید.",
+	},
+	"scan.subnet_expand": {
+		"en": "When an IP succeeds, automatically scan its /24 (or selected mask) neighbours looking for other working resolvers in the same subnet.",
+		"fa": "وقتی یک IP موفق شد، خودکار همسایه‌های /۲۴ (یا ماسک انتخاب‌شده) را هم اسکن کن تا ریزالورهای دیگر همان ساب‌نت پیدا شوند.",
+	},
+	"scan.subnet_mask": {
+		"en": "CIDR prefix used by subnet expansion. /24 = up to 256 neighbours per OK IP. /28 = 16. /30 = 4.",
+		"fa": "پیشوند CIDR که برای گسترش ساب‌نت استفاده می‌شود. /۲۴ یعنی تا ۲۵۶ همسایه به ازای هر IP موفق. /۲۸ یعنی ۱۶. /۳۰ یعنی ۴.",
+	},
+	"level2": {
+		"en": "The Deep Scan (formerly Level 2 / Second Round) is an OPTIONAL scoring pass you can run on any list — including manual lists you typed in yourself. It re-tests each OK resolver many times to measure its real success rate and 95th-percentile RTT and computes a quality score. Results are stored alongside the shallow-scan results, so the shallow status is never overwritten.",
+		"fa": "اسکن دقیق (که قبلاً سطح ۲ یا دور دوم نامیده می‌شد) یک گذر امتیازدهی اختیاری است که می‌توانید روی هر لیستی اجرا کنید — حتی روی لیست‌های دستی که خودتان تایپ کرده‌اید. این مرحله هر ریزالور موفق را چندین بار دوباره تست می‌کند تا نرخ موفقیت واقعی و RTT صدک‌۹۵ آن را اندازه بگیرد و یک امتیاز کیفیت محاسبه کند. نتایج کنار نتایج اسکن سطحی ذخیره می‌شوند، پس وضعیت اسکن سطحی هرگز بازنویسی نمی‌شود.",
+	},
+	"level2.queries_per_resolver": {
+		"en": "How many queries the deep scan sends to each OK resolver to score it. More = more accurate. 100 is a good default; 30 for a quick sanity check; 500+ for serious benchmarking.",
+		"fa": "در اسکن دقیق به هر ریزالور موفق چند کوئری فرستاده شود تا امتیازش حساب شود. بیشتر یعنی دقیق‌تر. ۱۰۰ پیش‌فرض خوبی است؛ ۳۰ برای بررسی سریع؛ ۵۰۰ یا بیشتر برای بنچمارک جدی.",
+	},
+	"level2.parallel": {
+		"en": "How many resolvers the deep scan scores in parallel. Per-resolver queries are sequential (so RTT is honest); this controls the global concurrency across resolvers.",
+		"fa": "اسکن دقیق چند ریزالور را هم‌زمان امتیازدهی کند. کوئری‌های مربوط به یک ریزالور خاص ترتیبی هستند (تا RTT صادقانه باشد)؛ این عدد همزمانی کلی بین ریزالورها را تعیین می‌کند.",
+	},
+	"ui.listen": {
+		"en": "TCP address the local web UI binds to. Keep it 127.0.0.1 unless you're sure you want LAN access.",
+		"fa": "آدرس TCP که رابط کاربری روی آن گوش می‌دهد. مگر اینکه مطمئن باشید دسترسی از شبکه‌ی محلی می‌خواهید، روی 127.0.0.1 نگهش دارید.",
+	},
+	"ui.language": {
+		"en": "UI language. Switching reloads the page.",
+		"fa": "زبان رابط کاربری. با تغییرش صفحه دوباره بارگذاری می‌شود.",
+	},
+	"servers.domains": {
+		"en": "One or more authoritative DNS suffixes configured on this scanner-server (e.g. v.example.com, x.example.com). The client rotates through them per query.",
+		"fa": "یک یا چند پسوند DNS مرجع که روی این سرور اسکنر تنظیم شده (مثلاً v.example.com و x.example.com). کلاینت بین آن‌ها به‌صورت چرخشی برای هر کوئری انتخاب می‌کند.",
+	},
+	"servers.token": {
+		"en": "The shared secret that authenticates this client to that server. Must match one of the server's configured tokens.",
+		"fa": "کلید مشترک که این کلاینت را پیش آن سرور احراز هویت می‌کند. باید با یکی از توکن‌های تنظیم‌شده‌ی سرور مطابقت داشته باشد.",
+	},
+}

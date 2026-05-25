@@ -1,0 +1,66 @@
+{{define "head"}}
+<meta charset="utf-8">
+<!-- viewport-fit=cover lets CSS env(safe-area-inset-*) read the real
+     iOS / Android insets, so the header and the bottom-nav can extend
+     into the notch / home-indicator zones without overlapping content. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>thescanner</title>
+<script>
+  // Apply the saved theme BEFORE the stylesheet evaluates, so the page
+  // doesn't flash dark-then-light (or vice versa). localStorage is the
+  // primary signal; the i18n bootstrap pushes the config value here on
+  // every save so this stays in sync.
+  (function () {
+    try {
+      var t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") {
+        document.documentElement.dataset.theme = t;
+      }
+    } catch (e) {}
+  })();
+</script>
+<link rel="stylesheet" href="/static/style.css">
+{{end}}
+
+{{define "header"}}
+<header>
+  <strong class="brand">thescanner</strong>
+  <!-- Desktop nav (in-header). On narrow viewports the bottom-nav
+       below takes over and this gets hidden via CSS. -->
+  <nav id="nav-main">
+    <a href="/scan"   class="{{if eq .Page "scan"}}active{{end}}"            data-i18n="nav.scan">Scan</a>
+    <a href="/lists"  class="{{if or (eq .Page "lists") (eq .Page "list")}}active{{end}}" data-i18n="nav.lists">Lists</a>
+    <a href="/config" class="{{if eq .Page "config"}}active{{end}}"         data-i18n="nav.config">Config</a>
+    <a href="/about"  class="{{if or (eq .Page "about") (eq .Page "privacy")}}active{{end}}" data-i18n="nav.about">About</a>
+  </nav>
+</header>
+
+<!-- Bottom nav — fixed to the bottom of the viewport on phones.
+     Hidden on desktop (CSS hides it ≥641px). Has icons + labels so
+     each item is unambiguous even when the labels wrap on small
+     widths. Pads itself with safe-area-inset-bottom for iOS home
+     indicator + Android gesture pill. -->
+<nav id="nav-bottom" aria-label="primary">
+  <a href="/scan"   class="{{if eq .Page "scan"}}active{{end}}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2l2-6 4 12 3-8 2 4h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span data-i18n="nav.scan">Scan</span>
+  </a>
+  <a href="/lists"  class="{{if or (eq .Page "lists") (eq .Page "list")}}active{{end}}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span data-i18n="nav.lists">Lists</span>
+  </a>
+  <a href="/config" class="{{if eq .Page "config"}}active{{end}}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.1-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.1 1.2L10 21h4l.5-2.6a7 7 0 0 0 2.1-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    <span data-i18n="nav.config">Config</span>
+  </a>
+  <a href="/about"  class="{{if or (eq .Page "about") (eq .Page "privacy")}}active{{end}}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 8v.01M11 12h1v5h1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span data-i18n="nav.about">About</span>
+  </a>
+</nav>
+{{end}}
+
+{{define "footer"}}
+<script src="/static/i18n.js"></script>
+<script src="/static/{{.Page}}.js"></script>
+{{end}}

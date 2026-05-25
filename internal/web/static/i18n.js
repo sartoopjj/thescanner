@@ -1,0 +1,170 @@
+(async function () {
+  const lang = document.body.dataset.lang || "en";
+  let bundle = {};
+  let chosen = true;
+  try {
+    const r = await fetch("/api/i18n?lang=" + lang);
+    const j = await r.json();
+    bundle = j.strings || {};
+    chosen = j.chosen !== false;
+  } catch (e) { /* fall through to defaults in the DOM */ }
+
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    if (bundle[k]) el.textContent = bundle[k];
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const k = el.getAttribute("data-i18n-placeholder");
+    if (bundle[k]) el.setAttribute("placeholder", bundle[k]);
+  });
+  // `.i` buttons live next to field labels — relabel them with the
+  // localized "info" word so they read naturally in both languages.
+  const infoLabel = bundle["common.info"] || "info";
+  document.querySelectorAll("button.i").forEach(btn => {
+    if (!btn.dataset.i18n) btn.textContent = infoLabel;
+  });
+
+  window.tt = function (k, fallback) { return bundle[k] || fallback || k; };
+
+  // Mobile browser chrome (URL bar + system UI) follows the page bg.
+  syncMobileChromeColor();
+  if (window.matchMedia) {
+    window.matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener?.("change", syncMobileChromeColor);
+  }
+
+  // ---- first-run language picker -----------------------------------
+  if (!chosen) {
+    showLanguagePicker();
+  }
+
+  // ---- "newer version available" banner ----------------------------
+  checkLatestVersion();
+})();
+
+async function checkLatestVersion() {
+  try {
+    const r = await fetch("/api/version");
+    if (!r.ok) return;
+    const v = await r.json();
+    if (v.up_to_date || !v.latest) return;
+    const msg = (window.tt || ((_,f)=>f))(
+      "common.update_available",
+      "Version " + v.latest + " is available. You're on " + v.current + "."
+    );
+    const bar = document.createElement("div");
+    bar.className = "update-bar";
+    bar.innerHTML = `<span></span>
+      <a target="_blank" rel="noopener" href="${v.url}"></a>
+      <button type="button" aria-label="dismiss">×</button>`;
+    bar.querySelector("span").textContent = msg
+      .replace("{latest}", v.latest).replace("{current}", v.current);
+    bar.querySelector("a").textContent =
+      (window.tt || ((_,f)=>f))("common.download", "Download");
+    bar.querySelector("a").href = v.url;
+    bar.querySelector("button").onclick = () => bar.remove();
+    document.body.prepend(bar);
+  } catch (_) {}
+}
+
+// showError replaces alert(j.error || r.statusText). Accepts the
+// JSON body the API returned; uses j.error_code → tt("err."+code) to
+// localize, falls back to j.error then to "err.unknown".
+function showError(j, fallback) {
+  let msg;
+  if (j && j.error_code) {
+    msg = (window.tt || ((_, f) => f))("err." + j.error_code, j.error || "");
+  } else if (j && j.error) {
+    msg = j.error;
+  } else if (fallback) {
+    msg = fallback;
+  } else {
+    msg = (window.tt || ((_, f) => f))("err.unknown", "Something went wrong.");
+  }
+  flash(msg, "fail");
+}
+
+// flash shows a top-of-page banner with the message. Auto-dismisses
+// after 6 s (configurable). Use kind="ok" for success, "fail" for
+// errors, "warn" for restart-needed style.
+function flash(text, kind) {
+  let el = document.getElementById("flash");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "flash";
+    document.body.appendChild(el);
+  }
+  el.className = "flash flash-" + (kind || "fail") + " show";
+  el.textContent = text;
+  clearTimeout(flash._t);
+  flash._t = setTimeout(() => { el.classList.remove("show"); }, 6000);
+}
+window.showError = showError;
+window.flash = flash;
+
+// Sync <meta theme-color> with the resolved --bg so the mobile
+// browser chrome / system UI follows the active theme.
+function syncMobileChromeColor() {
+  try {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    if (!bg) return;
+    let m = document.querySelector('meta[name="theme-color"]');
+    if (!m) {
+      m = document.createElement("meta");
+      m.setAttribute("name", "theme-color");
+      document.head.appendChild(m);
+    }
+    m.setAttribute("content", bg);
+  } catch (_) {}
+}
+
+function showLanguagePicker() {
+  const overlay = document.createElement("div");
+  overlay.className = "lang-picker-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.innerHTML = `
+    <div class="lang-picker-box">
+      <h1 class="lp-en">Choose your language</h1>
+      <h1 class="lp-fa" dir="rtl">یک زبان انتخاب کنید</h1>
+      <div class="lang-picker-buttons">
+        <button type="button" data-lang="en">English</button>
+        <button type="button" data-lang="fa" dir="rtl">فارسی</button>
+      </div>
+      <div class="lang-picker-err" id="lp-err"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.documentElement.style.overflow = "hidden";
+
+  overlay.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-lang]");
+    if (!btn) return;
+    btn.disabled = true;
+    overlay.querySelectorAll("[data-lang]").forEach(b => b.disabled = true);
+    const errEl = overlay.querySelector("#lp-err");
+    errEl.textContent = "";
+    try {
+      // Fetch current config, set just the language, post it back.
+      const r   = await fetch("/api/config");
+      const cfg = await r.json();
+      cfg.ui = cfg.ui || {};
+      cfg.ui.language = btn.dataset.lang;
+      const post = await fetch("/api/config", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(cfg)
+      });
+      if (post.ok) {
+        location.reload();
+      } else {
+        const j = await post.json().catch(() => ({}));
+        errEl.textContent = "Save failed: " + (j.error || post.statusText);
+        overlay.querySelectorAll("[data-lang]").forEach(b => b.disabled = false);
+      }
+    } catch (err) {
+      errEl.textContent = String(err);
+      overlay.querySelectorAll("[data-lang]").forEach(b => b.disabled = false);
+    }
+  });
+}

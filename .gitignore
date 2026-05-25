@@ -1,0 +1,62 @@
+
+.DS_Store
+PROTOCOL.md
+tmp
+# Created by https://www.toptal.com/developers/gitignore/api/go
+# Edit at https://www.toptal.com/developers/gitignore?templates=go
+
+### Go ###
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# End of https://www.toptal.com/developers/gitignore/api/go
+
+build
+bin/
+
+# runtime data + UI-managed configs (never commit)
+data/
+*.log
+config.json
+state.json
+results.json
+stats.json
+client_resolvers.txt
+
+# android keystore + build artifacts
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/thescanner.jks
+android/app/keystore.properties
+android/app/libs/*.aar
+*.jks
+keystore.properties
+
+# ios build artifacts (Mobile.xcframework is gomobile-generated)
+ios/Mobile.xcframework/
+ios/build/
+ios/DerivedData/
+ios/Thescanner.xcodeproj/xcuserdata/
+ios/Thescanner.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate

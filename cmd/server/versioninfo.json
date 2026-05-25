@@ -1,0 +1,25 @@
+{
+  "FixedFileInfo": {
+    "FileVersion":    {"Major": 0, "Minor": 0, "Patch": 0, "Build": 0},
+    "ProductVersion": {"Major": 0, "Minor": 0, "Patch": 0, "Build": 0},
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "Comments": "thescanner server — authoritative DNS daemon",
+    "CompanyName": "thescanner",
+    "FileDescription": "thescanner server",
+    "FileVersion": "0.0.0",
+    "InternalName": "thescanner-server",
+    "LegalCopyright": "Copyright (c) thescanner contributors. Released under the project license.",
+    "OriginalFilename": "thescanner-server.exe",
+    "ProductName": "thescanner",
+    "ProductVersion": "0.0.0"
+  },
+  "VarFileInfo": {
+    "Translation": {"LangID": "0409", "CharsetID": "04B0"}
+  }
+}

@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Generic title — see admin_test.go stealth invariant. -->
+<title>Sign in</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root {
+    --bg: #0e1015; --surface: #161922; --surface-2: #1c2030;
+    --border: #2a2f3c; --fg: #e6e9ef; --muted: #8a92a0;
+    --accent: #6aa0ff; --ok: #6ed27a; --fail: #ef6a6a; --warn: #f0b95d;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f5f7fa; --surface:#fff; --surface-2:#eef1f6; --border:#d6dbe4;
+      --fg:#1a1d24; --muted:#5b6573; --accent:#2563eb;
+      --ok:#16a34a; --fail:#dc2626; --warn:#b45309;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.5; font-size: 14.5px;
+    min-height: 100vh;
+  }
+
+  /* ---- pre-auth: a featureless centered sign-in card. No header,
+         no brand, no "thescanner" text anywhere on the page. ---- */
+  .signin-wrap {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 1.2rem;
+  }
+  .signin-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem 1.4rem; width: 100%; max-width: 360px;
+  }
+  .signin-card h2 { margin: 0 0 .4rem; font-size: 1.05rem; font-weight: 600; }
+  .signin-card p.hint { margin: 0 0 1rem; color: var(--muted); font-size: .85rem; }
+
+  /* ---- post-auth UI (revealed after a successful /admin/data call) ---- */
+  header { padding: .9rem 1.2rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; }
+  header h1 { margin: 0; font-size: 1.05rem; }
+  main { max-width: 880px; margin: 0 auto; padding: 1rem 1.2rem 4rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.2rem; margin: 1rem 0; }
+  h2 { margin: 0 0 .8rem; font-size: 1rem; }
+  h3 { margin: 1rem 0 .4rem; font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  label { display: block; color: var(--muted); font-size: .8rem; margin: .8rem 0 .25rem; }
+  input[type=text], input[type=password], textarea {
+    width: 100%; padding: .65rem .8rem; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; color: var(--fg); font: inherit; outline: none;
+  }
+  textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #0c1018; border: 0; padding: .6rem 1.1rem;
+    border-radius: 8px; cursor: pointer; font-weight: 600;
+  }
+  button.ghost  { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+  button.danger { background: transparent; border: 1px solid var(--border); color: var(--fail); }
+  button.ghost:hover  { background: var(--surface-2); }
+  button.danger:hover { background: rgba(239,106,106,.1); }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: .6rem 0; }
+  .grid-line { display: grid; grid-template-columns: 1fr 2fr auto; gap: .6rem; align-items: center; margin: .35rem 0; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .ok    { color: var(--ok); }
+  .fail  { color: var(--fail); }
+  .warn  { color: var(--warn); }
+  pre {
+    background: var(--surface-2); border-radius: 8px; padding: .6rem .8rem;
+    overflow-x: auto; font-size: .8rem; white-space: pre-wrap; word-break: break-all;
+  }
+  code { font-family: ui-monospace, monospace; }
+  .copy-uri { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; }
+  .copy-uri code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- Sign-in card. Post-auth chrome is appended via JS so view-source
+     on the unauthenticated page leaks no product terminology. -->
+<div class="signin-wrap" id="signin-wrap">
+  <form class="signin-card" id="signin-card" autocomplete="off" onsubmit="return false">
+    <h2>Sign in</h2>
+    <p class="hint">Enter your access token to continue.</p>
+    <label for="token" class="muted">Access token</label>
+    <input id="token" type="password" autocomplete="off" autofocus>
+    <div class="row" style="margin-top:1rem;">
+      <button id="btn-login">Continue</button>
+      <span id="login-msg" class="muted"></span>
+    </div>
+  </form>
+</div>
+
+<div id="admin-root" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let admin = "";
+
+function authHeaders() {
+  return { "Authorization": "Bearer " + admin };
+}
+
+// Render the admin chrome on demand. Keeps view-source clean pre-auth.
+function renderShell() {
+  const root = $("admin-root");
+  root.hidden = false;
+  root.innerHTML = `
+    <header>
+      <h1>Admin</h1>
+      <span class="muted" id="status">signed in</span>
+      <span style="flex:1"></span>
+      <button class="ghost" id="btn-signout">Sign out</button>
+    </header>
+    <main>
+      <section class="card" id="stats-card">
+        <h2>Counters</h2>
+        <pre id="stats-body">…</pre>
+      </section>
+
+      <section class="card" id="share-card">
+        <h2>Share URIs</h2>
+        <p class="muted">Copy one and paste into the client UI → Settings → Import URI.</p>
+        <div id="share-body"></div>
+      </section>
+
+      <section class="card" id="cfg-card">
+        <h2>Config editor</h2>
+        <p class="muted">Changes are saved to <code>config.json</code>. The DNS handler keeps the previously-loaded tokens/domains until the server is restarted.</p>
+
+        <h3>Listen addresses</h3>
+        <label>DNS listen</label>
+        <input id="cfg-listen" type="text" placeholder="0.0.0.0:5300">
+        <label>HTTP listen (this admin panel)</label>
+        <input id="cfg-stats-listen" type="text" placeholder="0.0.0.0:8053">
+
+        <h3>TLS (optional)</h3>
+        <p class="muted">Leave both blank to serve the panel over plain HTTP.
+        Provide an absolute path to a PEM-encoded cert + private key (e.g.
+        Let's Encrypt <code>fullchain.pem</code> / <code>privkey.pem</code>) to enable HTTPS.</p>
+        <label>TLS cert path</label>
+        <input id="cfg-tls-cert" type="text" placeholder="/etc/letsencrypt/live/.../fullchain.pem">
+        <label>TLS key path</label>
+        <input id="cfg-tls-key" type="text" placeholder="/etc/letsencrypt/live/.../privkey.pem">
+
+        <h3>Domains</h3>
+        <div id="domains"></div>
+        <div class="row"><button class="ghost" id="add-domain">+ Add domain</button></div>
+
+        <h3>Tokens</h3>
+        <div id="tokens"></div>
+        <div class="row"><button class="ghost" id="add-token">+ Add token</button></div>
+
+        <div class="row" style="margin-top:1rem;">
+          <button id="btn-save">Save to disk</button>
+          <span id="save-msg" class="muted"></span>
+        </div>
+      </section>
+    </main>
+  `;
+  $("btn-signout").onclick = signOut;
+  $("add-domain").onclick = () => $("domains").appendChild(domainRow(""));
+  $("add-token").onclick  = () => $("tokens").appendChild(tokenRow("", ""));
+  $("btn-save").onclick   = save;
+}
+
+function signOut() {
+  admin = "";
+  sessionStorage.removeItem("admin");
+  $("admin-root").hidden = true;
+  $("admin-root").innerHTML = "";
+  $("signin-wrap").style.display = "";
+  $("token").value = "";
+  $("login-msg").textContent = "";
+}
+
+// Relative XHRs so the panel works under any random sub-path.
+function api(p) {
+  return location.pathname.replace(/\/+$/, "") + "/" + p;
+}
+
+async function loadAll() {
+  let r = await fetch(api("data"), { headers: authHeaders() });
+  // Server returns 404 for both wrong-token and wrong-URL (stealth);
+  // since the page loaded we're on the right URL, so 404 = bad token.
+  if (r.status === 404 || r.status === 401) {
+    $("login-msg").textContent = "invalid token";
+    $("login-msg").className = "fail";
+    sessionStorage.removeItem("admin");
+    return;
+  }
+  if (!r.ok) {
+    $("login-msg").textContent = "error: " + r.status;
+    $("login-msg").className = "fail";
+    return;
+  }
+  const data = await r.json();
+
+  // Hide the sign-in card and reveal the admin shell.
+  $("signin-wrap").style.display = "none";
+  renderShell();
+
+  // Counters: drop the share array since we render it separately.
+  const counters = Object.assign({}, data);
+  delete counters.share;
+  $("stats-body").textContent = JSON.stringify(counters, null, 2);
+
+  renderShare(data.share || []);
+
+  // Config editor.
+  r = await fetch(api("config"), { headers: authHeaders() });
+  if (r.ok) {
+    const cfg = await r.json();
+    fillConfig(cfg);
+  }
+}
+
+function renderShare(entries) {
+  const body = $("share-body");
+  body.innerHTML = "";
+  entries.forEach(e => {
+    const row = document.createElement("div");
+    row.className = "copy-uri";
+    row.innerHTML = `
+      <strong>${escapeHTML(e.name)}</strong>
+      <code>${escapeHTML(e.uri)}</code>
+      <button class="ghost">Copy</button>
+    `;
+    row.querySelector("button").onclick = async () => {
+      try { await navigator.clipboard.writeText(e.uri); }
+      catch { fallbackCopy(e.uri); }
+      row.querySelector("button").textContent = "Copied";
+      setTimeout(() => { row.querySelector("button").textContent = "Copy"; }, 1500);
+    };
+    body.appendChild(row);
+  });
+}
+
+function fillConfig(cfg) {
+  $("cfg-listen").value       = cfg.server?.listen        || "";
+  $("cfg-stats-listen").value = cfg.server?.stats_listen  || "";
+  $("cfg-tls-cert").value     = cfg.server?.tls_cert      || "";
+  $("cfg-tls-key").value      = cfg.server?.tls_key       || "";
+
+  const domainsEl = $("domains");
+  domainsEl.innerHTML = "";
+  (cfg.domains || []).forEach(d => domainsEl.appendChild(domainRow(d.name)));
+
+  const tokensEl = $("tokens");
+  tokensEl.innerHTML = "";
+  (cfg.tokens || []).forEach(t => tokensEl.appendChild(tokenRow(t.name, t.secret)));
+}
+
+function domainRow(name) {
+  const d = document.createElement("div");
+  d.className = "grid-line";
+  d.innerHTML = `
+    <span class="muted">domain</span>
+    <input type="text" class="d-name" value="${escapeAttr(name || "")}" placeholder="v.example.com">
+    <button type="button" class="danger" title="remove row — click Save to disk to persist">×</button>
+  `;
+  d.querySelector("button").onclick = () => { d.remove(); markDirty(); };
+  return d;
+}
+function tokenRow(name, secret) {
+  const d = document.createElement("div");
+  d.className = "grid-line";
+  d.innerHTML = `
+    <input type="text" class="t-name"   value="${escapeAttr(name   || "")}" placeholder="name (e.g. alice)">
+    <input type="text" class="t-secret" value="${escapeAttr(secret || "")}" placeholder="shared secret">
+    <button type="button" class="danger" title="remove row — click Save to disk to persist">×</button>
+  `;
+  d.querySelector("button").onclick = () => { d.remove(); markDirty(); };
+  return d;
+}
+
+// markDirty: visual cue that the form has unsaved changes.
+function markDirty() {
+  const b = $("btn-save");
+  if (b) b.textContent = "Save to disk *";
+}
+
+async function save() {
+  const body = {
+    server: {
+      listen:       $("cfg-listen").value.trim(),
+      stats_listen: $("cfg-stats-listen").value.trim(),
+      tls_cert:     $("cfg-tls-cert").value.trim(),
+      tls_key:      $("cfg-tls-key").value.trim(),
+    },
+    domains: Array.from(document.querySelectorAll("#domains .d-name"))
+      .map(i => i.value.trim()).filter(Boolean).map(n => ({ name: n })),
+    tokens: Array.from(document.querySelectorAll("#tokens .grid-line"))
+      .map(row => ({
+        name:   row.querySelector(".t-name").value.trim(),
+        secret: row.querySelector(".t-secret").value.trim(),
+      }))
+      .filter(t => t.name && t.secret),
+  };
+  const r = await fetch(api("config"), {
+    method:  "POST",
+    headers: Object.assign({ "content-type": "application/json" }, authHeaders()),
+    body:    JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  const msg = $("save-msg");
+  if (r.ok) {
+    $("btn-save").textContent = "Save to disk";
+    const needs = j.needs_restart_for || [];
+    if (needs.length === 0) {
+      // Common case — tokens/domains/admin-password hot-reloaded.
+      msg.textContent = "saved + applied";
+      msg.className = "ok";
+    } else {
+      // Rare — listener-affecting fields changed.
+      msg.textContent = "saved — restart needed for: " + needs.join(", ");
+      msg.className = "warn";
+    }
+  } else {
+    msg.textContent = "error: " + (j.error || r.statusText);
+    msg.className = "fail";
+  }
+}
+
+function escapeHTML(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function escapeAttr(s) {
+  return String(s||"")
+    .replace(/&/g,"&amp;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;");
+}
+function fallbackCopy(t) {
+  const ta = document.createElement("textarea");
+  ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch {}
+  document.body.removeChild(ta);
+}
+
+$("btn-login").onclick = () => {
+  admin = $("token").value.trim();
+  if (!admin) { $("login-msg").textContent = "empty"; return; }
+  sessionStorage.setItem("admin", admin);
+  loadAll();
+};
+$("token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btn-login").click(); });
+
+// Auto-login if we already have a token cached this session.
+const cached = sessionStorage.getItem("admin");
+if (cached) { admin = cached; $("token").value = cached; loadAll(); }
+</script>
+</body>
+</html>

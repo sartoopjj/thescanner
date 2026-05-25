@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+
+app/build/
+app/libs/*.aar
+app/thescanner.jks
+app/keystore.properties

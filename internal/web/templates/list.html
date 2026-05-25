@@ -1,0 +1,151 @@
+{{define "list.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <div class="back-link">
+    <a href="/lists" data-i18n="lists.back">← Back to lists</a>
+  </div>
+
+  <section class="card" id="list-meta-card">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <h2 style="margin:0 0 .3rem;"><span id="m-name"></span> <span id="m-status-badge" class="badge"></span></h2>
+        <div style="color:var(--muted);font-size:.85rem;">
+          <span id="m-kind"></span> · <span id="m-server"></span> · <span id="m-created"></span>
+        </div>
+        <div style="margin-top:.4rem;font-size:.9rem;">
+          <span data-i18n="lists.col_total">Total</span>: <strong id="m-total">0</strong> ·
+          <span data-i18n="results.ok">OK</span>: <strong id="m-ok" style="color:var(--ok);">0</strong> ·
+          <span data-i18n="results.fail">Failed</span>: <strong id="m-failed" style="color:var(--fail);">0</strong> ·
+          <span data-i18n="lists.col_l2">Deep-scored</span>: <strong id="m-l2">0</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:.9rem;">
+      <button type="button" id="btn-resume" class="ghost" data-i18n="scan.resume" hidden>Resume</button>
+      <button type="button" id="btn-pause"  class="ghost" data-i18n="scan.pause"  hidden>Pause</button>
+      <button type="button" id="btn-deep"   class="ghost" data-i18n="lists.run_deep" hidden>Run deep scan</button>
+      <button type="button" id="btn-rescan-ok"  class="ghost" data-i18n="lists.rescan_ok" hidden>Rescan OK only</button>
+      <button type="button" id="btn-rescan-all" class="ghost" data-i18n="lists.rescan_all" hidden>Rescan all</button>
+      <button type="button" id="btn-rename" class="ghost" data-i18n="lists.rename">Rename</button>
+      <button type="button" id="btn-delete" class="danger" data-i18n="config.remove">Remove</button>
+    </div>
+  </section>
+
+  <section class="card" id="progress-card" hidden>
+    <h2 data-i18n="lists.progress">Progress</h2>
+
+    <div class="progress-row">
+      <div class="progress-label">
+        <span class="progress-title" id="shallow-title" data-i18n="lists.shallow_progress">Shallow scan</span>
+        <span class="progress-pct" id="shallow-pct">0%</span>
+      </div>
+      <progress id="shallow-bar" value="0" max="100"></progress>
+      <div class="progress-counters">
+        <span><span data-i18n="results.ok">OK</span>: <strong class="ok" id="p-ok">0</strong></span>
+        <span><span data-i18n="results.fail">Failed</span>: <strong class="fail" id="p-failed">0</strong></span>
+        <span><span data-i18n="lists.col_total">Total</span>: <strong id="p-total">0</strong></span>
+        <span id="p-elapsed-wrap" hidden><span data-i18n="lists.elapsed">Elapsed</span>: <strong id="p-elapsed">—</strong></span>
+        <span id="p-eta-wrap" hidden><span data-i18n="lists.eta">ETA</span>: <strong id="p-eta">—</strong></span>
+      </div>
+    </div>
+
+    <div class="progress-row" id="deep-row" hidden>
+      <div class="progress-label">
+        <span class="progress-title" data-i18n="config.level2">Deep scan</span>
+        <span class="progress-pct" id="deep-pct">0%</span>
+      </div>
+      <progress id="deep-bar" value="0" max="100"></progress>
+      <div class="progress-counters">
+        <span><span data-i18n="scan.l2_progress">Scored</span>: <strong id="p-l2-scored">0</strong> / <strong id="p-l2-elig">0</strong></span>
+      </div>
+    </div>
+
+    <details class="settings-summary">
+      <summary data-i18n="lists.settings_used">Scan settings in use</summary>
+      <div id="settings-summary-body" class="settings-body"></div>
+    </details>
+  </section>
+
+  <section class="card">
+    <div class="field-row">
+      <div class="field">
+        <div class="field-head"><label data-i18n="results.filter">Filter</label></div>
+        <select id="filter">
+          <option value="" data-i18n="results.all">All</option>
+          <option value="ok" data-i18n="results.ok">OK</option>
+          <option value="fail" data-i18n="results.fail">Failed</option>
+        </select>
+      </div>
+      <div class="field">
+        <div class="field-head"><label data-i18n="results.search">Search IP</label></div>
+        <input id="search" type="text">
+      </div>
+    </div>
+
+    <div class="row">
+      <a id="export-txt" class="btn ghost" data-i18n="results.export">Export OK IPs (.txt)</a>
+      <a id="export-csv" class="btn ghost" data-i18n="results.exportCSV">Export all (.csv)</a>
+    </div>
+
+    <table id="results-table">
+      <thead><tr>
+        <th>IP</th>
+        <th data-i18n="results.col_status">Status</th>
+        <th data-i18n="results.col_rtt">RTT</th>
+        <th data-i18n="results.col_l2_ok">L2 ok</th>
+        <th data-i18n="results.col_l2_p95">L2 p95</th>
+        <th data-i18n="results.col_score">Score</th>
+        <th data-i18n="results.col_src">Src</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="pager" id="pager">
+      <button type="button" class="ghost" id="prev-page">←</button>
+      <span class="page-info" id="page-info">0–0 / 0</span>
+      <button type="button" class="ghost" id="next-page">→</button>
+      <div class="field" style="margin:0;min-width:140px;flex:0 0 auto;">
+        <div class="field-head"><label data-i18n="results.page_size">Per page</label></div>
+        <select id="page-size">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+        </select>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Live query log, sticky to the bottom of the viewport. Collapsible
+     so it can fold out of the way on phones. -->
+<aside id="log-panel" class="log-panel" data-collapsed="true">
+  <div class="log-head">
+    <span class="log-title" data-i18n="log.title">Live log</span>
+    <span class="log-count" id="log-count">0</span>
+    <button type="button" class="log-clear" id="log-clear" data-i18n="log.clear">Clear</button>
+    <button type="button" class="log-toggle" id="log-toggle" aria-label="toggle">▾</button>
+  </div>
+  <div class="log-body" id="log-body"></div>
+</aside>
+
+<div id="rename-modal" class="help-modal" hidden>
+  <div class="help-box">
+    <button type="button" class="help-close" id="rename-close" aria-label="close">×</button>
+    <h3 data-i18n="lists.rename">Rename</h3>
+    <input id="rename-input" type="text" style="width:100%;background:var(--surface-2);color:var(--fg);border:1px solid var(--border);border-radius:var(--r-md);padding:.7rem .9rem;font:inherit;">
+    <div class="row" style="margin-top:.8rem;justify-content:flex-end;">
+      <button type="button" class="ghost" id="rename-cancel" data-i18n="config.cancel">Cancel</button>
+      <button type="button" id="rename-ok" data-i18n="config.save">Save</button>
+    </div>
+  </div>
+</div>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

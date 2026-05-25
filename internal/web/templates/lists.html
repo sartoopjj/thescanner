@@ -1,0 +1,41 @@
+{{define "lists.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <section class="card empty-state" id="empty-lists" hidden>
+    <h2 data-i18n="lists.empty_title">No scans yet</h2>
+    <p style="color:var(--muted);margin:.4rem 0 1rem;" data-i18n="lists.empty_body">Start a new shallow scan or build a manual list from IPs you already trust.</p>
+    <a class="btn" href="/scan" data-i18n="lists.go_scan">Start a scan</a>
+  </section>
+
+  <section class="card" id="lists-card" hidden>
+    <h2 data-i18n="lists.title">Lists</h2>
+
+    <div class="row" style="margin-bottom:.8rem;">
+      <a class="btn" href="/scan" data-i18n="lists.new_scan">New scan</a>
+      <a class="btn ghost" href="/scan?kind=manual" data-i18n="lists.new_manual">New manual list</a>
+      <button type="button" id="btn-bulk-delete" class="ghost" data-i18n="lists.delete_old">Delete older than…</button>
+    </div>
+
+    <div id="list-grid"></div>
+  </section>
+</main>
+
+<div id="bulk-delete-modal" class="help-modal" hidden>
+  <div class="help-box">
+    <button type="button" class="help-close" id="bulk-close" aria-label="close">×</button>
+    <h3 data-i18n="lists.delete_old">Delete older than…</h3>
+    <p style="color:var(--muted);font-size:.85rem;margin:0 0 .8rem;" data-i18n="lists.delete_old_body">Lists last updated before this date will be removed.</p>
+    <input id="bulk-date" type="date" style="width:100%;background:var(--surface-2);color:var(--fg);border:1px solid var(--border);border-radius:var(--r-md);padding:.7rem .9rem;font:inherit;">
+    <div class="row" style="margin-top:.8rem;justify-content:flex-end;">
+      <button type="button" class="ghost" id="bulk-cancel" data-i18n="config.cancel">Cancel</button>
+      <button type="button" class="danger" id="bulk-confirm" data-i18n="lists.delete_confirm">Delete</button>
+    </div>
+  </div>
+</div>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

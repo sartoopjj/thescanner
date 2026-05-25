@@ -1,0 +1,16 @@
+{
+  "server": {
+    "listen":       "0.0.0.0:53",
+    "stats_listen": "0.0.0.0:8053",
+    "admin_token":  "CHANGE-ME-LONG-RANDOM-STRING",
+    "admin_path":   "REGENERATE-WITH-OPENSSL-RAND-HEX-16-OR-LEAVE-EMPTY",
+    "tls_cert":     "",
+    "tls_key":      ""
+  },
+  "domains": [
+    { "name": "v.example.com" }
+  ],
+  "tokens": [
+    { "name": "alice", "secret": "shared-secret-rotate-me" }
+  ]
+}

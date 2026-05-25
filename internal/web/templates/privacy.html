@@ -1,0 +1,37 @@
+{{define "privacy.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <section class="card prose">
+    <h2 data-i18n="privacy.title">Privacy</h2>
+    <p class="muted" data-i18n="privacy.tldr">TL;DR: thescanner keeps every byte of your data on the device that runs it. No analytics, no telemetry, no third-party SDKs.</p>
+
+    <h3 data-i18n="privacy.data_title">What's stored locally</h3>
+    <ul>
+      <li data-i18n="privacy.data_config">Your scanner-server endpoints, tokens, and scan settings — under the app's private data directory.</li>
+      <li data-i18n="privacy.data_lists">Each scan you start is saved as a JSON file containing the IPs you supplied plus their per-resolver test results.</li>
+      <li data-i18n="privacy.data_logs">A short in-memory ring of recent log lines for the live-log pane. Not persisted to disk.</li>
+    </ul>
+
+    <h3 data-i18n="privacy.data_sent_title">What's sent over the network</h3>
+    <ul>
+      <li data-i18n="privacy.data_sent_dns">DNS queries to the resolvers <em>you</em> chose to scan. The queries are encrypted with the shared token of the scanner-server <em>you</em> chose to talk to.</li>
+      <li data-i18n="privacy.data_sent_noise">Optional "cover-traffic" DNS lookups to well-known public hostnames (google.com, wikipedia.org, …) when noise is enabled. Off by setting <code>scan.noise_enabled = false</code>.</li>
+    </ul>
+
+    <h3 data-i18n="privacy.no_telemetry_title">No telemetry</h3>
+    <p data-i18n="privacy.no_telemetry_body">thescanner does not phone home. It contains no analytics SDKs, no crash-reporting SDKs, and no advertising IDs. Updates are not auto-fetched; the app checks GitHub for new releases only when you ask it to.</p>
+
+    <h3 data-i18n="privacy.permissions_title">Permissions</h3>
+    <p data-i18n="privacy.permissions_body">The mobile builds use only the Internet permission. They don't request the camera, microphone, contacts, photos, or location.</p>
+
+    <h3 data-i18n="privacy.contact_title">Questions or removal requests</h3>
+    <p data-i18n="privacy.contact_body">File an issue at the GitHub repo linked from <a href="/about">About</a>.</p>
+  </section>
+</main>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

@@ -1,0 +1,50 @@
+{{define "about.html"}}<!doctype html>
+<html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
+<head>{{template "head" .}}</head>
+<body data-lang="{{.Lang}}">
+{{template "header" .}}
+<main>
+  <section class="card prose">
+    <h2 data-i18n="about.title">About thescanner</h2>
+
+    <p data-i18n="about.intro">thescanner finds public DNS resolvers that
+    cleanly forward authenticated queries to a server you control. It's
+    used as plumbing for downstream DNS-tunneling projects.</p>
+
+    <h3 data-i18n="about.architecture">Architecture</h3>
+    <p data-i18n="about.arch_body">There are two halves to thescanner.
+    The <strong>client</strong> is what you're using right now — it runs
+    on your laptop or phone, sweeps resolver lists, and shows the
+    results. The <strong>server</strong> is a small DNS daemon that
+    <em>you</em> deploy on a host with a public domain. The client only
+    talks to resolvers via your own server, so your scans never depend
+    on a shared service.</p>
+
+    <h3 data-i18n="about.server">Running your own scanner-server</h3>
+    <p data-i18n="about.server_body">You need a Linux/FreeBSD host, a
+    domain whose NS records you control, and one open port (UDP/TCP 53,
+    or any unprivileged port via an iptables redirect). The README has
+    a curl-installable script. Once it's up, the client UI can import a
+    <code>thescanner://</code> URI emitted by the server's stats
+    endpoint and you're ready to scan.</p>
+
+    <h3 data-i18n="about.repo">Source &amp; releases</h3>
+    <p>
+      <a href="https://github.com/sartoopjj/thescanner" target="_blank" rel="noopener">github.com/sartoopjj/thescanner</a>
+    </p>
+
+    <h3 data-i18n="about.donate">Support development</h3>
+    <p data-i18n="about.donate_body">If thescanner is useful to you and
+    you want to keep it maintained, please consider donating. Links on
+    the GitHub README.</p>
+
+    <h3 data-i18n="about.privacy">Privacy</h3>
+    <p>
+      <a href="/privacy" data-i18n="about.privacy_link">Read the privacy policy →</a>
+    </p>
+  </section>
+</main>
+{{template "footer" .}}
+</body>
+</html>
+{{end}}
