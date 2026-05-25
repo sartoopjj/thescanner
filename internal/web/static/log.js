@@ -32,12 +32,16 @@
     const lens = (e.q_len || e.resp_len)
       ? `${e.q_len || 0}→${e.resp_len || 0}B`
       : "";
+    // dir="ltr" on the numeric spans so the bidi algorithm doesn't
+    // reorder "270→44B" into "44→270B" / "270>44" in Persian RTL
+    // pages. IP + RTT + lens are all numeric/Latin and always need
+    // to flow left-to-right regardless of page direction.
     tr.innerHTML = `
-      <span class="lt">${fmtClock(e.time)}</span>
+      <span class="lt" dir="ltr">${fmtClock(e.time)}</span>
       <span class="li-status">${e.status || e.kind || ""}</span>
-      <span class="li-ip">${e.ip || ""}</span>
-      <span class="li-rtt">${e.rtt_ms ? e.rtt_ms + "ms" : ""}</span>
-      <span class="li-len">${lens}</span>
+      <span class="li-ip" dir="ltr">${e.ip || ""}</span>
+      <span class="li-rtt" dir="ltr">${e.rtt_ms ? e.rtt_ms + "ms" : ""}</span>
+      <span class="li-len" dir="ltr">${lens}</span>
       <span class="li-extra" title="${e.qname || ""}">${extra}</span>
     `;
     logBody.appendChild(tr);

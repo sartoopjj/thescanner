@@ -76,10 +76,19 @@
     // Resolve the pending transition: cleared when status reaches the
     // target OR the deadline expires (so the UI eventually unfreezes
     // even if the server never confirms).
+    //
+    // Subtle: for pause we accept ANY non-running terminal state
+    // (paused / done / deep_done) — not just "paused" — because the
+    // scan might have completed naturally at the same moment the user
+    // clicked Pause. Without this the button stayed stuck on
+    // "Stopping…" until the 10 s deadline elapsed even though the
+    // scan was already done.
     if (pending) {
-      const reached = (pending.target === "paused" && m.status === "paused") ||
-                      (pending.target === "scanning" && (m.status === "scanning" || m.status === "deep")) ||
-                      (pending.target === "deep" && (m.status === "deep" || m.status === "deep_done"));
+      const stillRunning = (m.status === "scanning" || m.status === "deep");
+      const reached =
+        (pending.target === "paused"   && !stillRunning) ||
+        (pending.target === "scanning" &&  stillRunning) ||
+        (pending.target === "deep"     && (m.status === "deep" || m.status === "deep_done"));
       if (reached || Date.now() > pending.deadline) {
         pending = null;
       }
@@ -212,6 +221,11 @@
       document.getElementById("p-l2-elig").textContent   = elig;
       const qEl = document.getElementById("p-l2-queries");
       if (qEl) {
+        // dir="ltr" so the "X / Y" pair flows left-to-right even on
+        // the Persian/RTL page — without it bidi flips digits around
+        // the slash and "1,234 / 5,000" renders as "5,000 / 1,234"
+        // or worse, with the slash itself looking like ">".
+        qEl.dir = "ltr";
         qEl.textContent = qTotal > 0
           ? qDone.toLocaleString() + " / " + qTotal.toLocaleString()
           : "";
@@ -459,13 +473,17 @@
 
     (j.results || []).forEach(row => {
       const tr = document.createElement("tr");
+      // dir="ltr" on each numeric cell so "44 / 270" doesn't get bidi-
+      // reordered into "270 / 44" (or render the slash as ">") on the
+      // Persian/RTL page. IP, RTT, L2-ok, p95, score are all numeric +
+      // ASCII so LTR is always correct.
       tr.innerHTML = `
-        <td>${row.ip}${row.source === "subnet" ? ' <span class="tag-subnet" title="discovered via /24 expand">+</span>' : ""}</td>
+        <td dir="ltr">${row.ip}${row.source === "subnet" ? ' <span class="tag-subnet" title="discovered via /24 expand">+</span>' : ""}</td>
         <td class="status-${row.status}">${row.status}${row.reason ? " ("+row.reason+")" : ""}</td>
-        <td>${rttCell(row)}</td>
-        <td>${l2OkCell(row)}</td>
-        <td>${p95Cell(row)}</td>
-        <td>${scoreCell(row)}</td>
+        <td dir="ltr">${rttCell(row)}</td>
+        <td dir="ltr">${l2OkCell(row)}</td>
+        <td dir="ltr">${p95Cell(row)}</td>
+        <td dir="ltr">${scoreCell(row)}</td>
         <td>${row.source || ""}</td>
       `;
       tbody.appendChild(tr);
