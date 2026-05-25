@@ -97,21 +97,23 @@
     const running = (m.status === "scanning" || m.status === "deep");
     const hasOK   = m.ok > 0 || m.kind === "manual";
 
+    // Lookup the buttons once — we touch their text/disabled below in
+    // both branches.
+    const stopBtn   = document.getElementById("btn-pause");
+    const startBtn  = document.getElementById("btn-resume");
+    const deepBtn2  = document.getElementById("btn-deep");
+
     if (pending) {
       // Force the appropriate "in-flight" button visible, disabled,
       // with a localized "Stopping…/Resuming…/Starting…" label. Hide
       // the others so the user can't fire a conflicting action.
       const isStop = pending.target === "paused";
-      const stopBtn   = document.getElementById("btn-pause");
-      const startBtn  = document.getElementById("btn-resume");
-      const deepBtn2  = document.getElementById("btn-deep");
       if (isStop) {
         show("btn-pause",  true);  stopBtn.disabled = true;
         stopBtn.textContent = tt(pending.label, "Stopping…");
         show("btn-resume", false);
         show("btn-deep",   false);
       } else {
-        // Resume/Deep — borrow whichever button matches.
         show("btn-pause",  false);
         if (pending.target === "deep") {
           show("btn-deep",   true);  deepBtn2.disabled = true;
@@ -126,6 +128,18 @@
       show("btn-rescan-ok",  false);
       show("btn-rescan-all", false);
     } else {
+      // CRITICAL: when leaving the pending branch we MUST restore the
+      // button labels + disabled state. show() only toggles `hidden`,
+      // so without this every button that we mutated above (textContent
+      // = "Stopping…" / "Resuming…" / "Starting…") would stay stuck
+      // on that label forever after the pending state cleared. That's
+      // what caused the "stuck on Stopping…" bug users kept reporting.
+      stopBtn.disabled  = false;
+      startBtn.disabled = false;
+      deepBtn2.disabled = false;
+      stopBtn.textContent  = tt("scan.pause",     "Pause");
+      startBtn.textContent = tt("scan.resume",    "Resume");
+      deepBtn2.textContent = tt("lists.run_deep", "Run deep scan");
       show("btn-pause",      running);
       show("btn-resume",     !running && m.status === "paused");
       show("btn-deep",       !running && hasOK && m.status !== "deep");

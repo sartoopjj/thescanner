@@ -84,6 +84,12 @@
   <div class="log-head">
     <span class="log-title" data-i18n="log.title">Live log</span>
     <span class="log-count" id="log-count">0</span>
+    <!-- Default ON; the active state is reflected via the .is-on class
+         on the button itself and persisted to localStorage. When ON,
+         every new log line scrolls the panel to the bottom — handy
+         when you open the panel after a flood of events has already
+         accumulated and you'd otherwise have to scroll manually. -->
+    <button type="button" class="log-auto is-on" id="log-auto" data-i18n="log.auto" aria-pressed="true">Auto-scroll</button>
     <button type="button" class="log-clear" id="log-clear" data-i18n="log.clear">Clear</button>
     <button type="button" class="log-toggle" id="log-toggle" aria-label="toggle">▾</button>
   </div>

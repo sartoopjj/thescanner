@@ -675,6 +675,7 @@ input[type=number],
   padding: 0 .55rem;
   font-size: .7rem;
 }
+.log-head .log-auto,
 .log-head .log-clear,
 .log-head .log-toggle {
   margin-inline-start: auto;
@@ -686,8 +687,18 @@ input[type=number],
   cursor: pointer;
   border-radius: 4px;
 }
-.log-head .log-clear:hover, .log-head .log-toggle:hover { background: var(--hover-tint); color: var(--fg); }
-.log-head .log-toggle { margin-inline-start: 0; transition: transform .15s; }
+.log-head .log-auto:hover, .log-head .log-clear:hover, .log-head .log-toggle:hover { background: var(--hover-tint); color: var(--fg); }
+.log-head .log-clear,
+.log-head .log-toggle { margin-inline-start: 0; }
+.log-head .log-toggle { transition: transform .15s; }
+/* Auto-scroll button: only the first of the three trailing buttons
+   gets the auto margin so the trio (Auto, Clear, ▾) clusters at the
+   end of the row. When active, fill it in so the user can see at a
+   glance that scroll-pinning is on. */
+.log-head .log-auto.is-on {
+  color: var(--accent);
+  background: rgba(106,160,255,.12);
+}
 .log-body {
   max-height: 28vh;
   overflow-y: auto;

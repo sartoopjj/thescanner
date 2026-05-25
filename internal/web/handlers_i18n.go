@@ -144,6 +144,7 @@ var i18nBundles = map[string]map[string]string{
 
 		"log.title":          "Live log",
 		"log.clear":          "Clear",
+		"log.auto":           "Auto-scroll",
 
 		// config page
 		"config.title":            "Configuration",
@@ -351,6 +352,7 @@ var i18nBundles = map[string]map[string]string{
 
 		"log.title":          "لاگ زنده",
 		"log.clear":          "پاک‌سازی",
+		"log.auto":           "اسکرول خودکار",
 
 		"config.title":            "تنظیمات",
 		"config.servers":          "سرورهای اسکنر",
