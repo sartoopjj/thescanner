@@ -25,7 +25,36 @@ type Runner struct {
 }
 
 func NewRunner(cfg *Config, lib *Library) *Runner {
-	return &Runner{cfg: cfg, lib: lib, log: NewLogBus(500)}
+	r := &Runner{cfg: cfg, lib: lib, log: NewLogBus(500)}
+	r.recoverInterruptedScans()
+	return r
+}
+
+// recoverInterruptedScans is called once at construction. It looks for
+// lists left with status="scanning" or "deep" from a previous run (the
+// process crashed, the host rebooted, the user closed the app mid-scan)
+// and flips them to "paused" so the UI shows the Resume button instead
+// of a stuck "scanning" badge with no actual worker behind it.
+//
+// We deliberately do NOT auto-resume here. Restarting scans without
+// user confirmation can chew through bandwidth at boot (imagine a
+// laptop waking up on a metered connection) and would also race with
+// the very first /api/lists request the UI fires on load. The Resume
+// button still gets users back to scanning in one tap.
+func (r *Runner) recoverInterruptedScans() {
+	for _, m := range r.lib.Index() {
+		if m.Status != ListScanning && m.Status != ListDeep {
+			continue
+		}
+		l, err := r.lib.Get(m.ID)
+		if err != nil {
+			continue
+		}
+		l.mu.Lock()
+		l.Meta.Status = ListPaused
+		l.mu.Unlock()
+		_ = r.lib.Save(l)
+	}
 }
 
 func (r *Runner) Library() *Library { return r.lib }

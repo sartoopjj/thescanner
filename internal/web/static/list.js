@@ -49,6 +49,17 @@
   let meta = null;
   let startedAt = null;
 
+  // Pending-transition state machine: when the user clicks Pause / Resume
+  // / Deep, the API returns immediately but the actual goroutine cleanup
+  // and status save can take 1–5 seconds. Without this, applyMeta() on
+  // the next refresh sees the OLD status and re-shows the original
+  // button, making the "Stopping…" feedback flash and disappear before
+  // the scan actually stops. We freeze button state into the pending
+  // shape until either (a) status matches the expected target or (b)
+  // the 10 s deadline passes (so a stuck/crashed runner doesn't lock
+  // the UI permanently).
+  let pending = null; // { target: "paused" | "scanning" | "deep", deadline: ms, label: i18n key }
+
   function applyMeta(m) {
     meta = m;
     document.getElementById("m-name").textContent = m.name;
@@ -62,13 +73,56 @@
     document.getElementById("m-failed").textContent  = m.failed;
     document.getElementById("m-l2").textContent      = m.l2_scored || 0;
 
+    // Resolve the pending transition: cleared when status reaches the
+    // target OR the deadline expires (so the UI eventually unfreezes
+    // even if the server never confirms).
+    if (pending) {
+      const reached = (pending.target === "paused" && m.status === "paused") ||
+                      (pending.target === "scanning" && (m.status === "scanning" || m.status === "deep")) ||
+                      (pending.target === "deep" && (m.status === "deep" || m.status === "deep_done"));
+      if (reached || Date.now() > pending.deadline) {
+        pending = null;
+      }
+    }
+
     const running = (m.status === "scanning" || m.status === "deep");
     const hasOK   = m.ok > 0 || m.kind === "manual";
-    show("btn-pause",      running);
-    show("btn-resume",     !running && m.status === "paused");
-    show("btn-deep",       !running && hasOK && m.status !== "deep");
-    show("btn-rescan-ok",  !running && m.kind === "shallow" && m.ok > 0);
-    show("btn-rescan-all", !running && m.kind === "shallow");
+
+    if (pending) {
+      // Force the appropriate "in-flight" button visible, disabled,
+      // with a localized "Stopping…/Resuming…/Starting…" label. Hide
+      // the others so the user can't fire a conflicting action.
+      const isStop = pending.target === "paused";
+      const stopBtn   = document.getElementById("btn-pause");
+      const startBtn  = document.getElementById("btn-resume");
+      const deepBtn2  = document.getElementById("btn-deep");
+      if (isStop) {
+        show("btn-pause",  true);  stopBtn.disabled = true;
+        stopBtn.textContent = tt(pending.label, "Stopping…");
+        show("btn-resume", false);
+        show("btn-deep",   false);
+      } else {
+        // Resume/Deep — borrow whichever button matches.
+        show("btn-pause",  false);
+        if (pending.target === "deep") {
+          show("btn-deep",   true);  deepBtn2.disabled = true;
+          deepBtn2.textContent = tt(pending.label, "Starting…");
+          show("btn-resume", false);
+        } else {
+          show("btn-resume", true);  startBtn.disabled = true;
+          startBtn.textContent = tt(pending.label, "Resuming…");
+          show("btn-deep",   false);
+        }
+      }
+      show("btn-rescan-ok",  false);
+      show("btn-rescan-all", false);
+    } else {
+      show("btn-pause",      running);
+      show("btn-resume",     !running && m.status === "paused");
+      show("btn-deep",       !running && hasOK && m.status !== "deep");
+      show("btn-rescan-ok",  !running && m.kind === "shallow" && m.ok > 0);
+      show("btn-rescan-all", !running && m.kind === "shallow");
+    }
 
     document.getElementById("export-txt").href = `/api/lists/${id}/export?format=txt&status=ok`;
     document.getElementById("export-csv").href = `/api/lists/${id}/export?format=csv`;
@@ -104,9 +158,13 @@
         ? tt("lists.kind_manual", "manual")
         : tt("lists.shallow_progress", "Shallow scan");
 
-    // Elapsed + ETA — useful while actively running.
-    const running = (m.status === "scanning" || m.status === "deep");
-    if (running) {
+    // Elapsed + ETA for the SHALLOW phase only. Including m.status==="deep"
+    // here was a bug — the deep row has its own progress and the shallow
+    // row's elapsed/ETA shouldn't keep ticking after the shallow pass
+    // is done. Now: shows live while shallow is running, hides once we
+    // transition to paused/done/deep/deep_done.
+    const shallowRunning = (m.status === "scanning");
+    if (shallowRunning) {
       if (!startedAt) startedAt = Date.now();
       const elapsed = Date.now() - startedAt;
       show("p-elapsed-wrap", true);
@@ -196,20 +254,28 @@
   }
 
   // ---- lifecycle ------------------------------------------------------
-  // Optimistic-UI guard: blocks double-clicks AND swaps the button label
-  // to "Stopping…"/"Resuming…" until the next refresh confirms the
-  // status change. Without this the user clicks Pause, the server-side
-  // cancel takes 1–5 seconds to actually halt (workers finish their
-  // current per-IP queries), and the button looks unresponsive — so
-  // they click it again, which 4×s the spam.
+  // Submitting a lifecycle action (pause / resume / deep) installs a
+  // "pending transition" that applyMeta honors on every subsequent
+  // refresh — the button stays in the "Stopping…/Resuming…/Starting…"
+  // shape until status reaches the expected target OR a 10 s deadline
+  // passes. This is what stops Pause from "flashing and going back to
+  // Pause" while the goroutine is still finishing in-flight queries.
   let actionInFlight = false;
-  async function action(name, btnEl, pendingLabelKey) {
+  async function action(name) {
     if (actionInFlight) return;
     actionInFlight = true;
-    const origLabel = btnEl ? btnEl.textContent : null;
-    if (btnEl) {
-      btnEl.disabled = true;
-      btnEl.textContent = tt(pendingLabelKey, btnEl.textContent + "…");
+    // Predict the next status. For Resume we look at l2_scored / kind
+    // to decide whether the runner will resume as shallow or deep.
+    const target = name === "pause" ? "paused"
+                 : name === "deep"  ? "deep"
+                 : (name === "resume"
+                    ? ((meta && (meta.l2_scored > 0 || meta.kind === "manual")) ? "deep" : "scanning")
+                    : null);
+    const labelKey = name === "pause" ? "scan.stopping"
+                   : name === "deep"  ? "scan.starting"
+                   : "scan.resuming";
+    if (target) {
+      pending = { target, label: labelKey, deadline: Date.now() + 10000 };
     }
     try {
       const r = await fetch(`/api/lists/${id}/${name}`, {
@@ -220,25 +286,16 @@
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         showError(j);
+        pending = null; // API failed — release the freeze immediately.
       }
       await refresh();
     } finally {
-      // Re-enable; applyMeta will hide the appropriate button on its
-      // own based on the new status. Restore the label in case the
-      // button is still visible (e.g. action errored out).
-      if (btnEl) {
-        btnEl.disabled = false;
-        if (origLabel) btnEl.textContent = origLabel;
-      }
       actionInFlight = false;
     }
   }
-  const pauseBtn  = document.getElementById("btn-pause");
-  const resumeBtn = document.getElementById("btn-resume");
-  const deepBtn   = document.getElementById("btn-deep");
-  pauseBtn .onclick = () => action("pause",  pauseBtn,  "scan.stopping");
-  resumeBtn.onclick = () => action("resume", resumeBtn, "scan.resuming");
-  deepBtn  .onclick = () => action("deep",   deepBtn,   "scan.starting");
+  document.getElementById("btn-pause" ).onclick = () => action("pause");
+  document.getElementById("btn-resume").onclick = () => action("resume");
+  document.getElementById("btn-deep"  ).onclick = () => action("deep");
 
   // Rescan: create a new list seeded from this one.
   async function rescan(okOnly) {
