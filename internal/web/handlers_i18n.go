@@ -209,6 +209,8 @@ var i18nBundles = map[string]map[string]string{
 		"err.no_ok_ips":           "No live resolvers to deep-scan yet. Run a shallow scan first, then deep-scan the OK ones for scoring.",
 		"err.server_not_found":    "The server this list was associated with is no longer in your configuration.",
 		"err.scan_already_running": "A scan is already running. Pause it first or wait until it finishes.",
+		"err.manual_shallow_rejected": "Manual lists can only be deep-scanned — they don't have a shallow stage.",
+		"err.nothing_running":     "Nothing is currently running.",
 		"err.scan_state_conflict": "This list is not in a state where that action is allowed.",
 		"err.unknown":             "Something went wrong. Check the log panel for details.",
 
@@ -409,6 +411,8 @@ var i18nBundles = map[string]map[string]string{
 		"err.no_ok_ips":           "هنوز ریزالور فعالی برای اسکن عمیق وجود ندارد. اول یک اسکن سطحی بزنید و سپس فقط ریزالورهای OK را برای امتیازدهی به اسکن عمیق بدهید.",
 		"err.server_not_found":    "سروری که این لیست به آن وصل بود دیگر در تنظیمات شما نیست.",
 		"err.scan_already_running": "یک اسکن همین حالا در حال اجراست. اول آن را Pause کنید یا منتظر بمانید تمام شود.",
+		"err.manual_shallow_rejected": "لیست‌های دستی فقط اسکن عمیق دارند و مرحله‌ی اسکن سطحی ندارند.",
+		"err.nothing_running":     "در حال حاضر چیزی در حال اجرا نیست.",
 		"err.scan_state_conflict": "این لیست در وضعیتی نیست که این عملیات روی آن مجاز باشد.",
 		"err.unknown":             "خطایی پیش آمد. برای جزئیات به پنل لاگ نگاه کنید.",
 

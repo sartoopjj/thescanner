@@ -93,11 +93,18 @@ async function checkLatestVersion() {
 }
 
 // showError replaces alert(j.error || r.statusText). Accepts the
-// JSON body the API returned; uses j.error_code → tt("err."+code) to
-// localize, falls back to j.error then to "err.unknown".
+// JSON body the API returned. Resolution order:
+//   1. specific error_code (other than "unknown") → tt("err."+code)
+//   2. raw j.error from the server (the actual diagnostic)
+//   3. caller-supplied fallback
+//   4. generic "err.unknown" line
+// Step 1 used to fire for error_code="unknown" too, which made every
+// uncategorized server error surface as a meaningless "Something went
+// wrong" — even when j.error carried the real cause. Now an "unknown"
+// code falls through to step 2 so users see what actually broke.
 function showError(j, fallback) {
   let msg;
-  if (j && j.error_code) {
+  if (j && j.error_code && j.error_code !== "unknown") {
     msg = (window.tt || ((_, f) => f))("err." + j.error_code, j.error || "");
   } else if (j && j.error) {
     msg = j.error;

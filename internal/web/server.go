@@ -112,16 +112,26 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 }
 
 // classifyErr maps known runner / library error messages to stable
-// codes the UI can localize via tt("err."+code, fallback).
+// codes the UI can localize via tt("err."+code, fallback). Keep these
+// substring patterns in sync with the literal errors returned in
+// internal/client/runner.go — a mismatch makes the UI fall back to the
+// generic "err.unknown" line and lose the specific message.
 func classifyErr(msg string) string {
 	switch {
 	case strings.Contains(msg, "no OK IPs to deep-scan"):
 		return "no_ok_ips"
 	case strings.Contains(msg, "server not found in config"):
 		return "server_not_found"
-	case strings.Contains(msg, "scan already running"),
+	// Runner.StartShallow / StartDeep return literally
+	// "another scan is already in progress" when r.cancel != nil.
+	case strings.Contains(msg, "another scan is already in progress"),
+		strings.Contains(msg, "scan already running"),
 		strings.Contains(msg, "already scanning"):
 		return "scan_already_running"
+	case strings.Contains(msg, "manual lists can only be deep-scanned"):
+		return "manual_shallow_rejected"
+	case strings.Contains(msg, "nothing running"):
+		return "nothing_running"
 	case strings.Contains(msg, "not paused"),
 		strings.Contains(msg, "already running"):
 		return "scan_state_conflict"
