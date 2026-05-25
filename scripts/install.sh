@@ -485,7 +485,9 @@ print_next_steps() {
   echo "  1. point an NS record at this host for each domain above"
   echo "  2. open the admin panel — the URL contains a random per-install"
   echo "     prefix, so any other path returns a bare 404:"
-  echo "       ${blue}${scheme}://<host>:${stats_port}/${admin_path}/${plain}"
+  # `echo -e` so the color escape codes in $blue / $plain are interpreted
+  # rather than printed literally as "\033[0;34m…\033[0m".
+  echo -e "       ${blue}${scheme}://<host>:${stats_port}/${admin_path}/${plain}"
   echo "     sign in with the admin token (saved in ${CONFIG_FILE})"
   echo "  3. inside the panel, add real shared-secret tokens and copy each"
   echo "     thescanner://server?... URI to hand to a client user"
