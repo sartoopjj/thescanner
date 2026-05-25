@@ -1,5 +1,5 @@
 .PHONY: all build server client run-server run-client reset-dev-config test lint vet fmt clean install android gomobile-aar \
-	ios-bind ios-bind-catalyst ios-build ios-list-sims ios-clean \
+	ios-bind ios-bind-catalyst ios-build ios-list-sims ios-clean ios-reset \
 	mac-app mac-dmg mac-clean \
 	build-all build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64 \
 	build-freebsd-amd64 build-freebsd-arm64 build-android-arm64 build-android-arm
@@ -228,7 +228,13 @@ ios-list-sims:
 	xcrun simctl list devices available
 
 ios-build: $(IOS_FRAMEWORK)
-	xcodebuild -project $(IOS_PROJECT) -scheme $(IOS_SCHEME) \
+	# Force a stable terminal width before invoking clang/Swift. Xcode
+	# hashes -fmessage-length=<COLUMNS> into the ModuleCache, so a build
+	# in an 80-col terminal and another in a 53-col terminal generate
+	# two incompatible PCMs for the same SDK module and the dependency
+	# scanner refuses to pick one ("Unexpected variant during dependency
+	# scanning on module 'Foundation'"). Pin it to 80 unconditionally.
+	COLUMNS=80 xcodebuild -project $(IOS_PROJECT) -scheme $(IOS_SCHEME) \
 		-destination 'platform=iOS Simulator,name=$(IOS_SIM_NAME)' \
 		$(IOS_XCODE_VERSIONS) build
 
@@ -237,6 +243,14 @@ $(IOS_FRAMEWORK):
 
 ios-clean:
 	rm -rf $(IOS_FRAMEWORK) ios/build ios/DerivedData
+
+# Nuclear option for the "Unexpected variant during dependency scanning"
+# error: wipes the global Xcode ModuleCache + this project's DerivedData
+# so the next ios-build rebuilds every PCM from scratch.
+ios-reset: ios-clean
+	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
+	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/Thescanner-*
+	@echo "Module cache + Thescanner DerivedData wiped. Run: make ios-build"
 
 # ---- macOS .app + .dmg (universal Intel + Apple Silicon) ----
 # macOS-only. Needs lipo, hdiutil, sips, iconutil.
