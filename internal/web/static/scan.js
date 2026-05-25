@@ -14,6 +14,35 @@
 
   const servers = cfg.servers || [];
 
+  // If a scan is currently running, surface a banner that links straight
+  // to that list — users were creating a second list while the first was
+  // still going (which the runner rejects, so they got confused error
+  // toasts). Better UX: tell them up-front.
+  try {
+    const lr = await fetch("/api/lists");
+    const lj = await lr.json();
+    const running = (lj.lists || []).find(m =>
+      m.status === "scanning" || m.status === "deep");
+    if (running) {
+      const banner = document.createElement("div");
+      banner.className = "flash flash-warn show";
+      banner.style.position = "static";
+      banner.style.marginBottom = "1rem";
+      const label = tt("scan.in_progress_banner",
+        "A scan is currently running.");
+      const linkLabel = tt("scan.open_running", "Open it");
+      banner.innerHTML = `${label} `;
+      const a = document.createElement("a");
+      a.href = "/list?id=" + encodeURIComponent(running.id);
+      a.textContent = linkLabel + " → " + (running.name || running.id);
+      a.style.color = "inherit";
+      a.style.textDecoration = "underline";
+      banner.appendChild(a);
+      const main = document.querySelector("main");
+      if (main && main.firstChild) main.insertBefore(banner, main.firstChild);
+    }
+  } catch (_) { /* non-fatal — banner is informational only */ }
+
   // Preselect manual kind via ?kind=manual.
   const qs = new URLSearchParams(location.search);
   if (qs.get("kind") === "manual") kindSel.value = "manual";

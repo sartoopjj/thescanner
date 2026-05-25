@@ -24,14 +24,28 @@ func Level2(ctx context.Context, tester *Tester, l2 Level2Cfg, l *List, save fun
 		l2.QueriesPerResolver = 100
 	}
 
-	// Reset the live query counter and publish the total up-front so
-	// the progress bar starts at 0 / (ips × per) instead of jumping in
-	// at half-full after the first IP finishes. This is what makes the
-	// UI feel responsive — L2Scored alone barely moves on 100 q/IP.
-	targets := l.OKIPs()
+	// Resume-friendly target selection: when a previous Level2 pass
+	// already scored some IPs (paused + resumed scenario), skip them
+	// here so we don't re-do the work AND so the "queries remaining"
+	// counter is accurate. Targets is just the not-yet-scored OK IPs.
+	allTargets := l.OKIPs()
+	targets := make([]string, 0, len(allTargets))
+	alreadyDone := 0
 	l.mu.Lock()
-	l.Meta.L2QueriesDone = 0
-	l.Meta.L2QueriesTotal = int64(len(targets)) * int64(l2.QueriesPerResolver)
+	for _, ip := range allTargets {
+		r := l.Results[ip]
+		if r != nil && r.L2Total > 0 {
+			alreadyDone += r.L2Total // count toward published progress
+			continue
+		}
+		targets = append(targets, ip)
+	}
+	// Publish the full-list view: total = ALL eligible IPs × per (so the
+	// progress bar represents the whole deep scan, not just this resume),
+	// done = queries already fired across previously-scored IPs. New
+	// queries from this pass add on top via atomic.AddInt64.
+	l.Meta.L2QueriesTotal = int64(len(allTargets)) * int64(l2.QueriesPerResolver)
+	l.Meta.L2QueriesDone = int64(alreadyDone)
 	l.mu.Unlock()
 
 	work := make(chan string, l2.Parallel*2)
@@ -88,9 +102,21 @@ func scoreOne(ctx context.Context, t *Tester, l *List, ip string, per int) {
 	ok := 0
 	noiseEnabled := t.Scan.NoiseEnabled
 	for i := 0; i < per; i++ {
+		// IMPORTANT: `break` inside `select` only escapes the select, not
+		// the surrounding for. The old code accidentally relied on it,
+		// so Pause didn't stop the per-IP loop early — each worker kept
+		// running its full 50/100 queries after cancellation. Use a
+		// non-blocking check + return to exit cleanly. Without this fix,
+		// Pause takes ~1–5 minutes to actually halt and Resume races
+		// with the still-running goroutine.
 		select {
 		case <-ctx.Done():
-			break
+			// Record the partial work so resume can decide whether to
+			// re-score this IP. Convention: L2Total==0 means "not yet
+			// scored"; any value means "fully or partially scored".
+			// We DON'T persist partial L2OK because percentile + score
+			// would be misleading on a half-run sample.
+			return
 		default:
 		}
 		// Sprinkle decoy lookups through the deep-scan loop too — this

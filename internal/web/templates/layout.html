@@ -22,6 +22,17 @@
       }
     } catch (e) {}
   })();
+  // Hide the body until i18n.js applies the translation bundle. Without
+  // this the page renders with the English data-i18n fallback strings
+  // first, then JS overwrites them ~50–200 ms later — a noticeable
+  // English-then-Persian "flash" for fa users. The class is removed at
+  // the end of i18n.js, restoring visibility in one repaint.
+  document.documentElement.classList.add("i18n-pending");
+  // Safety: if i18n.js never loads (network glitch, blocked script),
+  // reveal after 1.2 s so the user isn't left staring at a blank page.
+  setTimeout(function () {
+    document.documentElement.classList.remove("i18n-pending");
+  }, 1200);
 </script>
 <link rel="stylesheet" href="/static/style.css">
 {{end}}

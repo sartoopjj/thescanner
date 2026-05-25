@@ -1051,3 +1051,10 @@ a, button, [role="button"], input, select, textarea, .btn, .ghost,
   padding: .45rem .55rem;
   font: inherit;
 }
+
+/* ------- i18n flash prevention -------
+   <html> gets .i18n-pending on every page (inline script in layout.html
+   head). i18n.js removes it once the bundle is applied. Hiding <body>
+   instead of <html> lets the page background and theme stay visible
+   so the user sees a coloured blank instead of pure white. */
+html.i18n-pending body { visibility: hidden; }

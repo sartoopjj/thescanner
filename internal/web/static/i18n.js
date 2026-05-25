@@ -26,6 +26,12 @@
 
   window.tt = function (k, fallback) { return bundle[k] || fallback || k; };
 
+  // Reveal the page now that translations are in place. Layout.html
+  // sets `class="i18n-pending"` on <html>, which the stylesheet uses to
+  // keep <body> invisible until this line — kills the English-then-
+  // Persian flash users saw on Persian-language sessions.
+  document.documentElement.classList.remove("i18n-pending");
+
   // iOS Safari/WebView still triggers double-tap zoom on some
   // builds even with the viewport meta + CSS touch-action hints.
   // Catch a second tap inside 300 ms and preventDefault it. pinch-

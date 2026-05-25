@@ -196,21 +196,49 @@
   }
 
   // ---- lifecycle ------------------------------------------------------
-  async function action(name) {
-    const r = await fetch(`/api/lists/${id}/${name}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ server: meta && meta.server ? meta.server : defaultServer }),
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      showError(j);
+  // Optimistic-UI guard: blocks double-clicks AND swaps the button label
+  // to "Stopping…"/"Resuming…" until the next refresh confirms the
+  // status change. Without this the user clicks Pause, the server-side
+  // cancel takes 1–5 seconds to actually halt (workers finish their
+  // current per-IP queries), and the button looks unresponsive — so
+  // they click it again, which 4×s the spam.
+  let actionInFlight = false;
+  async function action(name, btnEl, pendingLabelKey) {
+    if (actionInFlight) return;
+    actionInFlight = true;
+    const origLabel = btnEl ? btnEl.textContent : null;
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = tt(pendingLabelKey, btnEl.textContent + "…");
     }
-    refresh();
+    try {
+      const r = await fetch(`/api/lists/${id}/${name}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ server: meta && meta.server ? meta.server : defaultServer }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        showError(j);
+      }
+      await refresh();
+    } finally {
+      // Re-enable; applyMeta will hide the appropriate button on its
+      // own based on the new status. Restore the label in case the
+      // button is still visible (e.g. action errored out).
+      if (btnEl) {
+        btnEl.disabled = false;
+        if (origLabel) btnEl.textContent = origLabel;
+      }
+      actionInFlight = false;
+    }
   }
-  document.getElementById("btn-pause" ).onclick = () => action("pause");
-  document.getElementById("btn-resume").onclick = () => action("resume");
-  document.getElementById("btn-deep"  ).onclick = () => action("deep");
+  const pauseBtn  = document.getElementById("btn-pause");
+  const resumeBtn = document.getElementById("btn-resume");
+  const deepBtn   = document.getElementById("btn-deep");
+  pauseBtn .onclick = () => action("pause",  pauseBtn,  "scan.stopping");
+  resumeBtn.onclick = () => action("resume", resumeBtn, "scan.resuming");
+  deepBtn  .onclick = () => action("deep",   deepBtn,   "scan.starting");
 
   // Rescan: create a new list seeded from this one.
   async function rescan(okOnly) {
@@ -408,6 +436,20 @@
   async function refresh() { await loadResults(); }
   refresh();
   setInterval(refresh, 2000);
+
+  // Confirm-on-leave: if a scan is actively running on THIS list, warn
+  // the user before they accidentally navigate away. Browsers ignore
+  // custom messages now (`returnValue` is the only thing they honor),
+  // but the prompt itself still appears. We only attach this when a
+  // scan is running, so reading other lists doesn't trigger nags.
+  window.addEventListener("beforeunload", (e) => {
+    const s = meta && meta.status;
+    if (s === "scanning" || s === "deep") {
+      e.preventDefault();
+      e.returnValue = tt("scan.confirm_leave",
+        "A scan is running. Leave the page anyway?");
+    }
+  });
 
   // Log-panel wiring lives in log.js and is loaded by every page via
   // layout.html's footer template. list.html sets window.__logListID

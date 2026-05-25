@@ -75,17 +75,21 @@ type Config struct {
 func DefaultData() ConfigData {
 	return ConfigData{
 		Scan: ScanCfg{
+			// Tuned 2026-05-25 from real-world feedback: shorter padded
+			// responses (smaller bandwidth), more parallelism, fewer
+			// duplicates+retries so a 100k-IP shallow scan finishes in
+			// minutes instead of hours.
 			MinQuery: 30, MaxQuery: 50,
-			MinResponse: 300, MaxResponse: 600,
-			EDNS0: true, Parallel: 500, Duplicate: 1,
-			TimeoutSeconds: 10,
-			Retries:        3,
+			MinResponse: 200, MaxResponse: 500,
+			EDNS0: true, Parallel: 1000, Duplicate: 2,
+			TimeoutSeconds: 5,
+			Retries:        2,
 			SubnetExpand:   false,
-			SubnetMask:     24,
+			SubnetMask:     28,
 			NoiseEnabled:   true,
 			NoiseEvery:     30,
 		},
-		Level2: Level2Cfg{QueriesPerResolver: 100, Parallel: 50},
+		Level2: Level2Cfg{QueriesPerResolver: 50, Parallel: 300},
 		// Language deliberately blank — the UI shows a first-run picker
 		// when it sees an empty value.
 		UI: UICfg{Listen: "127.0.0.1:8080", Language: ""},
