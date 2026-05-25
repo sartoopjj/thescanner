@@ -2,8 +2,13 @@
 <resources>
     <!-- Light variant. Picked to match the web UI's bg token (#f5f7fa)
          so the status bar + gesture-pill area blend in with the page
-         in light mode. Dark icons on status bar (windowLightStatusBar). -->
-    <style name="Theme.Thescanner" parent="Theme.Material3.DayNight.NoActionBar">
+         in light mode. Dark icons on status bar (windowLightStatusBar).
+
+         Parent is the built-in framework Material theme (android API 21+)
+         not com.google.android.material — we don't render any Material
+         widgets, so depending on that library would add ~2 MB for one
+         theme attribute we already define ourselves. -->
+    <style name="Theme.Thescanner" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">#F5F7FA</item>
         <item name="android:windowBackground">#F5F7FA</item>
         <item name="android:navigationBarColor">#F5F7FA</item>

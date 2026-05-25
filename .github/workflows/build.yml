@@ -189,9 +189,14 @@ jobs:
           VERSION=${GITHUB_REF_NAME:-dev}
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # -s -w  strip symbol + DWARF debug tables (~20% .so shrink)
+          # -trimpath (passed via gomobile flag below) replaces build-host
+          # paths with go-module-relative paths — both shrinks the binary
+          # and makes builds reproducible.
           LDFLAGS="-s -w -X github.com/sartoopjj/thescanner/internal/version.Version=${VERSION} -X github.com/sartoopjj/thescanner/internal/version.Commit=${COMMIT} -X github.com/sartoopjj/thescanner/internal/version.Date=${DATE} -extldflags=-Wl,-z,max-page-size=16384"
           mkdir -p android/app/libs
           gomobile bind -target=android/arm,android/arm64,android/386,android/amd64 -androidapi 24 \
+            -trimpath \
             -ldflags="${LDFLAGS}" -o android/app/libs/scanner.aar ./mobile
 
       - name: Decode signing keystore

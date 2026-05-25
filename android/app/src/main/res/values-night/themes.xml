@@ -2,8 +2,10 @@
 <resources>
     <!-- Dark variant, used automatically when the OS is in dark mode.
          Color matches the web UI's bg token (#0e1015). Light icons on
-         status/nav bar so they read against the dark fill. -->
-    <style name="Theme.Thescanner" parent="Theme.Material3.DayNight.NoActionBar">
+         status/nav bar so they read against the dark fill.
+
+         Built-in framework Material dark theme (no AndroidX dep). -->
+    <style name="Theme.Thescanner" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:statusBarColor">#0E1015</item>
         <item name="android:windowBackground">#0E1015</item>
         <item name="android:navigationBarColor">#0E1015</item>

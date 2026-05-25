@@ -185,7 +185,10 @@ gomobile-aar:
 	go get golang.org/x/mobile/bind
 	go mod tidy
 	@mkdir -p android/app/libs
-	gomobile bind -target=android -androidapi $(ANDROID_API) -ldflags='$(LDFLAGS)' \
+	# -trimpath shrinks the .so by stripping the absolute build-host path
+	# tree out of every symbol record. Matches what the CI workflow does
+	# so local APKs ship the same size as released ones.
+	gomobile bind -target=android -androidapi $(ANDROID_API) -trimpath -ldflags='$(LDFLAGS)' \
 		-o $(ANDROID_AAR) github.com/sartoopjj/thescanner/mobile
 
 android: gomobile-aar

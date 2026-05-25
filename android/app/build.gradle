@@ -46,12 +46,42 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 (the post-AGP-3.5 minifier) strips every Kotlin/Java
+            // class + method + field that nothing on the live call graph
+            // references. Without it the APK carries every transitive
+            // class from androidx + Kotlin stdlib; with it the same
+            // graph collapses to ~1.5 MB instead of ~5 MB.
+            minifyEnabled true
+            // Resource shrinker drops unused PNGs / strings / colors
+            // (e.g. every Material widget drawable we don't render).
+            // Only works when minifyEnabled=true.
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+            // Drop runtime debug info Android keeps for stack traces in
+            // dev builds. WebView errors still surface fine in adb logs.
+            ndk {
+                debugSymbolLevel 'NONE'
+            }
         }
         // No debug variant published. The Gradle "debug" still exists for IDE
         // run/instrument, but we don't ship it.
+    }
+
+    // Packaging: drop bundled debug/JNI noise + per-locale resource
+    // duplication. `excludes` removes files JNI never reads; the
+    // `resources.excludes` strips Kotlin metadata from AAR libraries we
+    // don't reflect into (gomobile + Material classes we kept).
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/*.kotlin_module',
+                'kotlin/**',
+                '**/*.txt',
+            ]
+        }
     }
 
     // Two passes:
@@ -78,8 +108,12 @@ android {
 dependencies {
     // gomobile-generated AAR — produced by `make gomobile-aar`.
     implementation fileTree(dir: 'libs', include: ['*.aar'])
+    // core-ktx → WindowCompat / ViewCompat / WindowInsetsCompat
+    // activity-ktx → ComponentActivity (the only Activity superclass we use).
+    // We intentionally do NOT pull in appcompat or material — MainActivity
+    // hosts a single full-screen WebView and the theme below is a built-in
+    // android.* style, so neither AndroidX library has any callers. Each
+    // would add ~1–2 MB of stripped APK.
     implementation 'androidx.core:core-ktx:1.15.0'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.activity:activity-ktx:1.10.1'
 }
