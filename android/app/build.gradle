@@ -87,7 +87,22 @@ android {
     // Two passes:
     //   1. Splits build (default) → per-ABI APKs: arm64-v8a, armeabi-v7a, x86, x86_64.
     //   2. ./gradlew -PuniversalBuild=true assembleRelease → one universal APK.
+    //
+    // In the universal pass we deliberately drop the x86 (32-bit Intel)
+    // .so. There are essentially no real Android devices running 32-bit
+    // x86 in the wild (the last wave was the 2014-era Asus Zenfone line);
+    // x86_64 still ships for Chromebooks / WSA / emulators. Excluding
+    // x86 from universal saves ~10 MB of native code per download.
+    // Users who actually need x86 can still grab the dedicated per-ABI
+    // APK produced by pass 1.
     def buildUniversal = project.findProperty('universalBuild') == 'true'
+    if (buildUniversal) {
+        defaultConfig {
+            ndk {
+                abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            }
+        }
+    }
     splits {
         abi {
             enable !buildUniversal
