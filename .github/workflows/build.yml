@@ -176,6 +176,11 @@ jobs:
           export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
           go install golang.org/x/mobile/cmd/gomobile@latest
           go install golang.org/x/mobile/cmd/gobind@latest
+          # Newer gomobile requires golang.org/x/mobile in the module
+          # dep graph (not just on PATH). Ensure it's present and
+          # go.sum is fresh before invoking gomobile bind.
+          go get golang.org/x/mobile/bind
+          go mod tidy
           gomobile init
 
       - name: Build gomobile AAR

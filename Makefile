@@ -176,8 +176,14 @@ ANDROID_API ?= 21
 # gomobile-aar: produce the .aar consumed by android/app/. Requires:
 #   go install golang.org/x/mobile/cmd/gomobile@latest
 #   gomobile init
+# Modern gomobile also requires `golang.org/x/mobile` in the module
+# dependency graph (not just on PATH), so we go get + go mod tidy
+# before binding — otherwise it errors with "missing golang.org/x/mobile
+# dependency". Re-runs are cheap if it's already there.
 gomobile-aar:
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found. Run: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init"; exit 1; }
+	go get golang.org/x/mobile/bind
+	go mod tidy
 	@mkdir -p android/app/libs
 	gomobile bind -target=android -androidapi $(ANDROID_API) -ldflags='$(LDFLAGS)' \
 		-o $(ANDROID_AAR) github.com/sartoopjj/thescanner/mobile
@@ -204,12 +210,16 @@ IOS_XCODE_VERSIONS = MARKETING_VERSION="$(IOS_MARKETING_VERSION)" CURRENT_PROJEC
 
 ios-bind:
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found. Run: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init"; exit 1; }
+	go get golang.org/x/mobile/bind
+	go mod tidy
 	gomobile bind -iosversion=14.0 -target=ios,iossimulator \
 		-ldflags='$(IOS_LDFLAGS)' \
 		-o $(IOS_FRAMEWORK) github.com/sartoopjj/thescanner/mobile
 
 ios-bind-catalyst:
 	@command -v gomobile >/dev/null 2>&1 || { echo "gomobile not found"; exit 1; }
+	go get golang.org/x/mobile/bind
+	go mod tidy
 	gomobile bind -iosversion=14.0 -target=ios,iossimulator,maccatalyst \
 		-ldflags='$(IOS_LDFLAGS)' \
 		-o $(IOS_FRAMEWORK) github.com/sartoopjj/thescanner/mobile
