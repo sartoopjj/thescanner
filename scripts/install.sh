@@ -8,14 +8,26 @@
 
 set -euo pipefail
 
-# When invoked as `curl … | sudo bash`, stdin is the pipe carrying the
-# script itself — not the controlling terminal. Every `read -rp "…"` then
-# hits EOF immediately, returns empty input, and the installer races past
-# every prompt (domains, ports, admin token, TLS, iptables) writing a
-# broken config along the way. Re-attach stdin to /dev/tty so the prompts
-# actually wait for the user. Same pattern used by rustup, nvm, etc.
-if [ ! -t 0 ] && [ -r /dev/tty ]; then
-  exec </dev/tty
+# When invoked as `curl … | sudo bash`, two things are wrong at once:
+#   1. bash is reading the script source from the pipe — so naively
+#      doing `exec </dev/tty` cuts bash off mid-read and the script
+#      hangs forever waiting for more lines from /dev/tty.
+#   2. every `read -rp "…"` prompt hits EOF on the pipe and returns
+#      empty input, so the installer would race past domains/ports/
+#      TLS prompts writing a broken config.
+#
+# Fix: if stdin is not a tty, re-download ourselves to a temp file and
+# re-exec bash with that file as the script source AND /dev/tty as
+# stdin. The new bash reads the script from disk (so the redirect is
+# safe) and `read -rp` calls wait on the real terminal.
+if [ ! -t 0 ] && [ -r /dev/tty ] && [ -z "${THESCANNER_INSTALLER_REEXEC:-}" ]; then
+  _tmp="$(mktemp /tmp/thescanner-install.XXXXXX)"
+  trap 'rm -f "$_tmp"' EXIT
+  if ! curl -fsSL "https://raw.githubusercontent.com/sartoopjj/thescanner/main/scripts/install.sh" -o "$_tmp"; then
+    echo "could not re-download installer for interactive run" >&2
+    exit 1
+  fi
+  THESCANNER_INSTALLER_REEXEC=1 exec bash "$_tmp" "$@" </dev/tty
 fi
 
 red='\033[0;31m'
