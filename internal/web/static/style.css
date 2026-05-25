@@ -22,6 +22,13 @@
   --bar-bg:        rgba(22, 25, 34, .92);
   --bar-bg-strong: rgba(14, 16, 21, .96);
   --hover-tint:    rgba(255,255,255,.04);
+  /* Height of the log panel's collapsed header bar — used to lift the
+     sticky save-bar above it on /config so they don't overlap. Keep in
+     sync with .log-head padding + border. */
+  --log-collapsed-h: 36px;
+  /* Bottom-nav height (phones only). Single source of truth so the
+     save-bar / log-panel stacking math doesn't drift. */
+  --nav-bottom-h: 58px;
 }
 :root[data-theme="light"] {
   --bg: #f5f7fa;
@@ -148,11 +155,14 @@ main {
   padding: 1.5rem 1rem 6rem;
   max-width: 760px;
   margin: 0 auto;
-  /* Reserve room for the bottom nav on phones — height of the bar
-     (~58px) plus its safe-area inset. */
+  /* Reserve room at the bottom for stacked sticky bars: log-panel
+     collapsed header (always) + save-bar (only on /config) + nav
+     (only on phones). 6rem covers desktop comfortably. */
 }
 @media (max-width: 640px) {
-  main { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  /* Phones stack three bars: nav (58) + log-collapsed (36) + save-bar
+     (~52) + safe-area. Sum ≈ 146px → ~9.5rem of clear scroll room. */
+  main { padding-bottom: calc(9.5rem + env(safe-area-inset-bottom)); }
 }
 
 /* ------- cards ------- */
@@ -642,7 +652,7 @@ input[type=number],
 }
 @media (max-width: 640px) {
   .log-panel {
-    bottom: calc(58px + env(safe-area-inset-bottom));
+    bottom: calc(var(--nav-bottom-h) + env(safe-area-inset-bottom));
     padding-bottom: 0;
   }
 }
@@ -759,10 +769,14 @@ main { padding-bottom: 18vh; }
   font-size: .85rem;
 }
 
-/* ------- sticky save bar ------- */
+/* ------- sticky save bar -------
+   Sits above the collapsed log panel (--log-collapsed-h) so its Save
+   button is never obscured. When the user expands the log panel, the
+   panel's higher z-index lets it cover the save-bar — collapsing the
+   log brings the save-bar back into view. */
 .save-bar {
   position: fixed;
-  bottom: 0;
+  bottom: var(--log-collapsed-h);
   left: 0;
   right: 0;
   background: var(--bar-bg);
@@ -777,10 +791,10 @@ main { padding-bottom: 18vh; }
   box-shadow: var(--shadow-lift);
 }
 @media (max-width: 640px) {
-  /* Lift the save bar above the bottom-nav so the action button is
-     reachable on phones. */
+  /* Stack on phones: bottom-nav → log-panel collapsed header → save-bar.
+     Each term is the height of the layer below it. */
   .save-bar {
-    bottom: calc(58px + env(safe-area-inset-bottom));
+    bottom: calc(var(--nav-bottom-h) + var(--log-collapsed-h) + env(safe-area-inset-bottom));
     padding-bottom: .9rem;
   }
 }
@@ -961,3 +975,57 @@ progress::-moz-progress-bar { background: var(--accent); }
 .flash-fail { background: var(--fail); color: #fff; }
 .flash-ok   { background: var(--ok);   color: #0c1018; }
 .flash-warn { background: var(--warn); color: #0c1018; }
+
+/* ------- responsive results table (mobile-friendly) ------- */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: .6rem;
+}
+.table-scroll table { margin-top: 0; min-width: 560px; /* keep columns readable */ }
+
+/* Kill the double-tap-to-zoom delay on tappable elements (mobile
+   browsers + WebView). pinch-zoom still works for accessibility. */
+a, button, [role="button"], input, select, textarea, .btn, .ghost,
+#nav-bottom a, #nav-main a, .log-head, .log-toggle {
+  touch-action: manipulation;
+}
+
+/* ------- list-page action buttons (Resume/Pause/Deep/Rescan/...) -------
+   Uniform-width tiles in a responsive grid: 2 columns on phones, more
+   on wider viewports. Replaces the old flex-wrap row that produced
+   ragged stair-step layouts in RTL when button labels had different
+   lengths. */
+.list-actions {
+  margin-top: .9rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: .55rem;
+}
+.list-actions > button {
+  width: 100%;
+  /* min-width:0 lets the grid column actually shrink — without it the
+     default `min-width:auto` is the button's intrinsic text width, so
+     long Persian labels (e.g. "اسکن مجدد فقط موفق‌ها") push the button
+     past the card edge on narrow viewports. */
+  min-width: 0;
+  /* Allow wrapping instead of overflowing; line-height keeps two-line
+     buttons roughly the same height as single-line ones. */
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-word;
+}
+/* Phones: force two equal columns so the Persian labels (longer than
+   their English counterparts) don't push one button onto its own row.
+   Tighten gap + padding so two buttons + the gap fit inside the card
+   even at iPhone-SE width (~320px of card interior). */
+@media (max-width: 540px) {
+  .list-actions { grid-template-columns: 1fr 1fr; gap: .45rem; }
+  .list-actions > button { padding: .6rem .5rem; font-size: .92rem; }
+}
+/* The destructive Delete button gets its own row at the end — visually
+   separates it from the other actions so an accidental tap is less
+   likely. */
+.list-actions > #btn-delete { grid-column: 1 / -1; }

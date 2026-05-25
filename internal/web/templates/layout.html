@@ -3,7 +3,11 @@
 <!-- viewport-fit=cover lets CSS env(safe-area-inset-*) read the real
      iOS / Android insets, so the header and the bottom-nav can extend
      into the notch / home-indicator zones without overlapping content. -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- maximum-scale=1.0 is the only reliable way to block iOS WebKit's
+     double-tap zoom (the CSS touch-action: manipulation hint isn't
+     respected in WKWebView). pinch-zoom is preserved via the JS
+     handler below — accessibility still works, the gimmick doesn't. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>thescanner</title>
 <script>
   // Apply the saved theme BEFORE the stylesheet evaluates, so the page
@@ -60,7 +64,25 @@
 </nav>
 {{end}}
 
+{{define "log-panel"}}
+<!-- Live-log panel, present on every page. /list also sets
+     window.__logListID right before log.js loads so it filters to
+     that one list; other pages get an unfiltered stream so users can
+     watch what scans are doing without first opening a list. -->
+<aside id="log-panel" class="log-panel" data-collapsed="true">
+  <div class="log-head">
+    <span class="log-title" data-i18n="log.title">Live log</span>
+    <span class="log-count" id="log-count">0</span>
+    <button type="button" class="log-clear" id="log-clear" data-i18n="log.clear">Clear</button>
+    <button type="button" class="log-toggle" id="log-toggle" aria-label="toggle">▾</button>
+  </div>
+  <div class="log-body" id="log-body"></div>
+</aside>
+{{end}}
+
 {{define "footer"}}
+{{template "log-panel" .}}
 <script src="/static/i18n.js"></script>
 <script src="/static/{{.Page}}.js"></script>
+<script src="/static/log.js"></script>
 {{end}}

@@ -1,7 +1,7 @@
 {{define "list.html"}}<!doctype html>
 <html lang="{{.Lang}}" dir="{{if eq .Lang "fa"}}rtl{{else}}ltr{{end}}">
 <head>{{template "head" .}}</head>
-<body data-lang="{{.Lang}}">
+<body data-lang="{{.Lang}}" data-list-id="{{.ListID}}">
 {{template "header" .}}
 <main>
   <div class="back-link">
@@ -24,14 +24,14 @@
       </div>
     </div>
 
-    <div class="row" style="margin-top:.9rem;">
-      <button type="button" id="btn-resume" class="ghost" data-i18n="scan.resume" hidden>Resume</button>
-      <button type="button" id="btn-pause"  class="ghost" data-i18n="scan.pause"  hidden>Pause</button>
-      <button type="button" id="btn-deep"   class="ghost" data-i18n="lists.run_deep" hidden>Run deep scan</button>
-      <button type="button" id="btn-rescan-ok"  class="ghost" data-i18n="lists.rescan_ok" hidden>Rescan OK only</button>
-      <button type="button" id="btn-rescan-all" class="ghost" data-i18n="lists.rescan_all" hidden>Rescan all</button>
-      <button type="button" id="btn-rename" class="ghost" data-i18n="lists.rename">Rename</button>
-      <button type="button" id="btn-delete" class="danger" data-i18n="config.remove">Remove</button>
+    <div class="list-actions">
+      <button type="button" id="btn-resume"     class="ghost"  data-i18n="scan.resume"      hidden>Resume</button>
+      <button type="button" id="btn-pause"      class="ghost"  data-i18n="scan.pause"       hidden>Pause</button>
+      <button type="button" id="btn-deep"       class="ghost"  data-i18n="lists.run_deep"   hidden>Run deep scan</button>
+      <button type="button" id="btn-rescan-ok"  class="ghost"  data-i18n="lists.rescan_ok"  hidden>Rescan OK only</button>
+      <button type="button" id="btn-rescan-all" class="ghost"  data-i18n="lists.rescan_all" hidden>Rescan all</button>
+      <button type="button" id="btn-rename"     class="ghost"  data-i18n="lists.rename">Rename</button>
+      <button type="button" id="btn-delete"     class="danger" data-i18n="config.remove">Remove</button>
     </div>
   </section>
 
@@ -91,18 +91,20 @@
       <a id="export-csv" class="btn ghost" data-i18n="results.exportCSV">Export all (.csv)</a>
     </div>
 
-    <table id="results-table">
-      <thead><tr>
-        <th>IP</th>
-        <th data-i18n="results.col_status">Status</th>
-        <th data-i18n="results.col_rtt">RTT</th>
-        <th data-i18n="results.col_l2_ok">L2 ok</th>
-        <th data-i18n="results.col_l2_p95">L2 p95</th>
-        <th data-i18n="results.col_score">Score</th>
-        <th data-i18n="results.col_src">Src</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-scroll">
+      <table id="results-table">
+        <thead><tr>
+          <th>IP</th>
+          <th data-i18n="results.col_status">Status</th>
+          <th data-i18n="results.col_rtt">RTT</th>
+          <th data-i18n="results.col_l2_ok">L2 ok</th>
+          <th data-i18n="results.col_l2_p95">L2 p95</th>
+          <th data-i18n="results.col_score">Score</th>
+          <th data-i18n="results.col_src">Src</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
     <div class="pager" id="pager">
       <button type="button" class="ghost" id="prev-page">←</button>
@@ -122,17 +124,10 @@
   </section>
 </main>
 
-<!-- Live query log, sticky to the bottom of the viewport. Collapsible
-     so it can fold out of the way on phones. -->
-<aside id="log-panel" class="log-panel" data-collapsed="true">
-  <div class="log-head">
-    <span class="log-title" data-i18n="log.title">Live log</span>
-    <span class="log-count" id="log-count">0</span>
-    <button type="button" class="log-clear" id="log-clear" data-i18n="log.clear">Clear</button>
-    <button type="button" class="log-toggle" id="log-toggle" aria-label="toggle">▾</button>
-  </div>
-  <div class="log-body" id="log-body"></div>
-</aside>
+<!-- The log panel lives in layout.html (so every page has it).
+     We pass the list ID via <body data-list-id="..."> (set above) and
+     log.js reads document.body.dataset.listId — keeps Go template
+     syntax out of any <script> tag so IDE linters stay quiet. -->
 
 <div id="rename-modal" class="help-modal" hidden>
   <div class="help-box">

@@ -1,10 +1,14 @@
 package com.thescanner.android
 
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -74,6 +78,48 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         }
+        // WebChromeClient unlocks default native dialogs for JS
+        // alert/confirm/prompt. Without it the WebView silently
+        // returns false from every confirm() call — which is why
+        // the "delete this list?" button appeared to do nothing.
+        wv.webChromeClient = WebChromeClient()
+
+        // Wire WebView "download a resource" notifications to the
+        // platform DownloadManager, so the result-export buttons
+        // actually save files to the Downloads folder instead of
+        // showing a blank page.
+        wv.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            try {
+                val req = DownloadManager.Request(Uri.parse(url))
+                req.setMimeType(mimeType)
+                req.addRequestHeader("User-Agent", wv.settings.userAgentString)
+                req.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                val name = guessDownloadName(url, contentDisposition, mimeType)
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+            } catch (_: Exception) {
+                // Best-effort — if DownloadManager is missing (rare /
+                // sandboxed), the user can re-run the export from a
+                // browser instead.
+            }
+        }
+    }
+
+    private fun guessDownloadName(url: String, cd: String?, mime: String?): String {
+        // Parse `filename=` out of Content-Disposition first.
+        cd?.let {
+            val m = Regex("filename=\"?([^\";]+)\"?").find(it)
+            if (m != null) return m.groupValues[1]
+        }
+        val last = Uri.parse(url).lastPathSegment
+        if (!last.isNullOrBlank()) return last
+        val ext = when (mime) {
+            "text/csv" -> "csv"
+            else       -> "txt"
+        }
+        return "thescanner-export.$ext"
     }
 
     private fun startGoAndLoad() {

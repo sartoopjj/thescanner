@@ -44,5 +44,11 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <!-- iOS 14+ blocks LAN access (including DNS queries to LAN
+         resolvers like 192.168.x.x or 10.x.x.x) unless we declare a
+         purpose string and the user grants the one-time permission
+         prompt. Without this, the scanner times out on every LAN IP. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Only required if you want to test DNS resolvers on your LAN (e.g. 192.168.x.x). Deny if you only scan public DNS.</string>
 </dict>
 </plist>

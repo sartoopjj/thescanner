@@ -26,6 +26,25 @@
 
   window.tt = function (k, fallback) { return bundle[k] || fallback || k; };
 
+  // iOS Safari/WebView still triggers double-tap zoom on some
+  // builds even with the viewport meta + CSS touch-action hints.
+  // Catch a second tap inside 300 ms and preventDefault it. pinch-
+  // zoom (two-finger) isn't affected — only the gesture that
+  // implicitly translates "tap, tap" into "zoom in".
+  (function blockDoubleTapZoom() {
+    let lastTouchEnd = 0;
+    document.addEventListener("touchend", (e) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+    // Same defence against the synthesised gesturestart event Safari
+    // fires when it's about to zoom on a tap target. Cheap, idempotent.
+    ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => {
+      document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+    });
+  })();
+
   // Mobile browser chrome (URL bar + system UI) follows the page bg.
   syncMobileChromeColor();
   if (window.matchMedia) {
