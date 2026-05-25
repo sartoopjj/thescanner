@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/miekg/dns v1.1.62
 	go.uber.org/automaxprocs v1.6.0
+	golang.org/x/mobile v0.0.0-20260520154334-0e4426e1883d
 	golang.org/x/sys v0.44.0
 )
 
