@@ -8,6 +8,16 @@
 
 set -euo pipefail
 
+# When invoked as `curl … | sudo bash`, stdin is the pipe carrying the
+# script itself — not the controlling terminal. Every `read -rp "…"` then
+# hits EOF immediately, returns empty input, and the installer races past
+# every prompt (domains, ports, admin token, TLS, iptables) writing a
+# broken config along the way. Re-attach stdin to /dev/tty so the prompts
+# actually wait for the user. Same pattern used by rustup, nvm, etc.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+  exec </dev/tty
+fi
+
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -361,7 +371,15 @@ do_first_install() {
   install_binary
 
   local -a domains
+  # mapfile + <(prompt_domains) runs prompt_domains in a subshell, so any
+  # `exit 1` inside that function only kills the subshell — the outer
+  # script keeps going with an empty `domains` array and writes a config
+  # with `"domains": []`. Re-check here and fail loudly instead.
   mapfile -t domains < <(prompt_domains)
+  if [[ ${#domains[@]} -eq 0 ]]; then
+    echo -e "${red}at least one domain is required — aborting install${plain}" >&2
+    exit 1
+  fi
 
   local prompt_out listen stats admin
   prompt_out="$(prompt_ports_and_token "0.0.0.0:${DEFAULT_DNS_PORT}" "0.0.0.0:${DEFAULT_STATS_PORT}" "")"
