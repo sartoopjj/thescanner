@@ -332,6 +332,34 @@ func (s *Server) apiListExport(w http.ResponseWriter, r *http.Request, id string
 	statusFilter := strings.ToLower(r.URL.Query().Get("status"))
 	rows := collectRows(&dto, statusFilter, "")
 
+	// Optional "give me the top-N OK resolvers by deep-scan score".
+	//   ?sort=score       — re-sort by L2Score DESC, RTT ASC tiebreaker
+	//   ?top=N            — truncate to the first N rows AFTER sorting
+	// Combined they let the UI grab "the 100 best-performing IPs only".
+	// Sorting happens AFTER the status filter so `?status=ok&sort=score&top=100`
+	// returns the 100 OK rows with the best score.
+	if strings.ToLower(r.URL.Query().Get("sort")) == "score" {
+		sort.SliceStable(rows, func(i, j int) bool {
+			a, b := rows[i], rows[j]
+			if a.L2Sc != b.L2Sc {
+				return a.L2Sc > b.L2Sc
+			}
+			// Tiebreak: faster RTT first. RTT==0 ("not measured") sinks.
+			if a.RTT == 0 {
+				return false
+			}
+			if b.RTT == 0 {
+				return true
+			}
+			return a.RTT < b.RTT
+		})
+	}
+	if topRaw := r.URL.Query().Get("top"); topRaw != "" {
+		if n, err := strconv.Atoi(topRaw); err == nil && n > 0 && n < len(rows) {
+			rows = rows[:n]
+		}
+	}
+
 	switch format {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")

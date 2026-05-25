@@ -72,6 +72,8 @@
 
     document.getElementById("export-txt").href = `/api/lists/${id}/export?format=txt&status=ok`;
     document.getElementById("export-csv").href = `/api/lists/${id}/export?format=csv`;
+    // Top-N download is wired once below (not per applyMeta) — it reads the
+    // input live, so we don't need to refresh the href here.
 
     updateProgress(m);
   }
@@ -123,19 +125,39 @@
     }
 
     // ----- deep row -----
-    const elig = m.kind === "manual" ? (m.total || 0) : (m.ok || 0);
+    const elig   = m.kind === "manual" ? (m.total || 0) : (m.ok || 0);
     const scored = m.l2_scored || 0;
+    // Query-level progress (counter incremented per-query in the Go
+    // side via atomic.AddInt64). Drives the progress bar smoothly,
+    // because per-IP `scored` only ticks once every QueriesPerResolver
+    // queries and the bar would sit at 0% for many minutes otherwise.
+    const qDone  = m.l2_queries_done  || 0;
+    const qTotal = m.l2_queries_total || 0;
     const deepRunningOrDone =
-      m.status === "deep" || m.status === "deep_done" || scored > 0;
+      m.status === "deep" || m.status === "deep_done" || scored > 0 || qDone > 0;
     show("deep-row", deepRunningOrDone && elig > 0);
     if (deepRunningOrDone && elig > 0) {
       const dbar = document.getElementById("deep-bar");
-      dbar.max   = elig;
-      dbar.value = scored;
-      const dpct = elig > 0 ? Math.floor((scored / elig) * 100) : 0;
-      document.getElementById("deep-pct").textContent = dpct + "%";
+      if (qTotal > 0) {
+        dbar.max   = qTotal;
+        dbar.value = Math.min(qDone, qTotal);
+        document.getElementById("deep-pct").textContent =
+          Math.floor((dbar.value / qTotal) * 100) + "%";
+      } else {
+        // Fallback for old saved lists without the query counters.
+        dbar.max   = elig;
+        dbar.value = scored;
+        document.getElementById("deep-pct").textContent =
+          (elig > 0 ? Math.floor((scored / elig) * 100) : 0) + "%";
+      }
       document.getElementById("p-l2-scored").textContent = scored;
       document.getElementById("p-l2-elig").textContent   = elig;
+      const qEl = document.getElementById("p-l2-queries");
+      if (qEl) {
+        qEl.textContent = qTotal > 0
+          ? qDone.toLocaleString() + " / " + qTotal.toLocaleString()
+          : "";
+      }
     }
 
     populateSettingsSummary();
@@ -244,6 +266,40 @@
   };
 
   // ---- delete ---------------------------------------------------------
+  // Top-N export — downloads (or copies to clipboard) just the best-
+  // scored OK IPs. Uses the server's ?sort=score&top=N&status=ok
+  // query so the sort happens on the full result set (the table
+  // pagination's view is irrelevant). Click → download .txt; Shift-
+  // click → copy to clipboard instead (handy on mobile WebViews
+  // where downloads ask for permissions).
+  const topNBtn   = document.getElementById("export-topn-txt");
+  const topNInput = document.getElementById("export-topn-input");
+  if (topNBtn && topNInput) {
+    topNBtn.addEventListener("click", async (ev) => {
+      const n = Math.max(1, parseInt(topNInput.value, 10) || 100);
+      const url = `/api/lists/${id}/export?format=txt&status=ok&sort=score&top=${n}`;
+      if (ev.shiftKey) {
+        // Shift-click: fetch + copy to clipboard, no download.
+        try {
+          const r = await fetch(url);
+          const t = await r.text();
+          await navigator.clipboard.writeText(t);
+          topNBtn.textContent = tt("results.copied", "Copied");
+          setTimeout(() => {
+            topNBtn.textContent = tt("results.export_topn", "Copy/Download top N");
+          }, 1500);
+        } catch (_) {
+          // Clipboard may not be available (insecure context) — fall
+          // back to a download so the user still gets the file.
+          window.location.href = url;
+        }
+        return;
+      }
+      // Regular click → trigger a normal download.
+      window.location.href = url;
+    });
+  }
+
   document.getElementById("btn-delete").onclick = async () => {
     if (!confirm(tt("lists.confirm_delete", "Delete this list? This cannot be undone."))) return;
     const r = await fetch(`/api/lists/${id}`, { method: "DELETE" });

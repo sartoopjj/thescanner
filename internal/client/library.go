@@ -54,8 +54,16 @@ type ListMeta struct {
 	OK       int        `json:"ok"`
 	Failed   int        `json:"failed"`
 	L2Scored int        `json:"l2_scored,omitempty"`
-	Created  time.Time  `json:"created"`
-	Updated  time.Time  `json:"updated"`
+	// Query-level deep-scan progress, in addition to per-IP L2Scored.
+	// L2Scored only ticks when an IP's entire `per` query budget has
+	// been spent (so the UI bar stays at 0/N for many minutes when
+	// QueriesPerResolver=100); these counters move on every single
+	// query so users see live activity. Updated via atomic.AddInt64
+	// from Level2 workers, so plain int64 type is intentional.
+	L2QueriesDone  int64     `json:"l2_queries_done,omitempty"`
+	L2QueriesTotal int64     `json:"l2_queries_total,omitempty"`
+	Created        time.Time `json:"created"`
+	Updated        time.Time `json:"updated"`
 }
 
 // List is the full record: metadata + per-IP status + per-IP results.

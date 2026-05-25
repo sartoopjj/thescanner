@@ -1029,3 +1029,25 @@ a, button, [role="button"], input, select, textarea, .btn, .ghost,
    separates it from the other actions so an accidental tap is less
    likely. */
 .list-actions > #btn-delete { grid-column: 1 / -1; }
+
+/* ------- top-N export row -------
+   Sits in the same `.row` as the .txt / .csv export buttons. On
+   narrow viewports the whole group wraps; the input + button stay
+   together via .export-topn (inline-flex). */
+.export-row { gap: .6rem; align-items: center; }
+.export-topn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--muted);
+  font-size: .9rem;
+}
+.export-topn input[type="number"] {
+  width: 5.5rem;
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: .45rem .55rem;
+  font: inherit;
+}

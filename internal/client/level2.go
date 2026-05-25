@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +23,16 @@ func Level2(ctx context.Context, tester *Tester, l2 Level2Cfg, l *List, save fun
 	if l2.QueriesPerResolver <= 0 {
 		l2.QueriesPerResolver = 100
 	}
+
+	// Reset the live query counter and publish the total up-front so
+	// the progress bar starts at 0 / (ips × per) instead of jumping in
+	// at half-full after the first IP finishes. This is what makes the
+	// UI feel responsive — L2Scored alone barely moves on 100 q/IP.
+	targets := l.OKIPs()
+	l.mu.Lock()
+	l.Meta.L2QueriesDone = 0
+	l.Meta.L2QueriesTotal = int64(len(targets)) * int64(l2.QueriesPerResolver)
+	l.mu.Unlock()
 
 	work := make(chan string, l2.Parallel*2)
 	var wg sync.WaitGroup
@@ -51,7 +62,6 @@ func Level2(ctx context.Context, tester *Tester, l2 Level2Cfg, l *List, save fun
 		}
 	}()
 
-	targets := l.OKIPs()
 	for _, ip := range targets {
 		select {
 		case <-ctx.Done():
@@ -95,10 +105,33 @@ func scoreOne(ctx context.Context, t *Tester, l *List, ip string, per int) {
 			ok++
 			rtts = append(rtts, rtt)
 		}
+		// Tick the global query counter on EVERY query so the UI bar
+		// moves continuously. Without this the bar sits at 0/N for
+		// minutes (because L2Scored only ticks when a whole IP's 100
+		// queries finish). Atomic so 50+ workers don't need the lock.
+		atomic.AddInt64(&l.Meta.L2QueriesDone, 1)
 	}
 	successRate := float64(ok) / float64(per)
 	p95 := percentile(rtts, 0.95)
-	score := successRate*100.0 - float64(p95.Milliseconds())/10.0
+
+	// Scoring v2:
+	//   - Success rate is the PRIMARY signal (0..100 points).
+	//   - Latency is a bounded tiebreaker: each 100 ms of p95 costs
+	//     1 point, capped at 30. This prevents the old formula's
+	//     pathology where a 21/100 IP with ~210 ms p95 scored 0
+	//     (21 − 21 = 0). Now it scores ~19 — still ranks above
+	//     complete failures, which is what users want when picking
+	//     "best of a bad bunch" resolvers.
+	//   - Floor of 1 if at least one query succeeded, so the sort
+	//     never lumps "works rarely" in with "never worked".
+	latencyPenalty := float64(p95.Milliseconds()) / 100.0
+	if latencyPenalty > 30 {
+		latencyPenalty = 30
+	}
+	score := successRate*100.0 - latencyPenalty
+	if ok > 0 && score < 1 {
+		score = 1
+	}
 	if score < 0 {
 		score = 0
 	}

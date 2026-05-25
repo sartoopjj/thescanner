@@ -52,6 +52,29 @@
   resolversEl.addEventListener("input", recount);
   recount();
 
+  // Open-with / Share Sheet auto-import:
+  // The Android wrapper exposes window.AndroidImport.consume() which
+  // returns the text content of a file the user picked via "Open with
+  // thescanner" (or shared via Share Sheet), and clears the slot on
+  // first read so refreshing the page doesn't re-import.
+  // (iOS will get an equivalent window.IOSImport later — same shape.)
+  try {
+    const bridge = window.AndroidImport || window.IOSImport;
+    const payload = bridge && typeof bridge.consume === "function"
+      ? bridge.consume()
+      : "";
+    if (payload) {
+      const lines = extractResolvers(payload);
+      const added = appendLines(lines);
+      countEl.textContent = added > 0
+        ? `+${added} ` + tt("scan.imported_from_file", "imported from file")
+        : tt("scan.no_ips_in_file", "no IPs found in file");
+      // Keep the imported-from-file hint visible for a moment, then
+      // resume the normal "N resolvers" display.
+      setTimeout(recount, 3500);
+    }
+  } catch (_) { /* bridge missing on desktop / iOS — ignore */ }
+
   function extractResolvers(text) {
     if (!text) return [];
     const re = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?\b/g;

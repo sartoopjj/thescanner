@@ -9,6 +9,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -22,6 +23,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import mobile.App
 import mobile.Mobile
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -50,6 +52,29 @@ class MainActivity : ComponentActivity() {
     // onCreate (mandatory before onStart per the Activity Result API
     // contract). Receives the result and forwards it to the WebView.
     private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+
+    // When the app is launched (or already-running) via an "Open with
+    // thescanner" / Share Sheet intent carrying a text file or text blob,
+    // we stash the parsed content here. scan.js pulls it on page load via
+    // the AndroidImport JavaScript bridge and populates the resolver
+    // textarea automatically.
+    @Volatile private var pendingImport: String? = null
+
+    /**
+     * Tiny @JavascriptInterface exposed to the web UI as `window.AndroidImport`.
+     * scan.js calls `consume()` on load — it returns the pending file content
+     * (or "" if none) and clears the slot so re-loading the page doesn't
+     * re-import. Safe to expose to the loopback page because the only thing
+     * it does is hand back data we already collected from a system intent.
+     */
+    inner class ImportBridge {
+        @JavascriptInterface
+        fun consume(): String {
+            val v = pendingImport
+            pendingImport = null
+            return v ?: ""
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +106,85 @@ class MainActivity : ComponentActivity() {
         webView = findViewById(R.id.webView)
         configureWebView(webView)
 
+        // Capture the launching intent (cold-start case). Must happen
+        // BEFORE startGoAndLoad so the URL we navigate to can be set to
+        // /scan when there's something to import.
+        consumeIncomingIntent(intent)
+
         startGoAndLoad()
+    }
+
+    // Hot-start case: launchMode=singleTask means an "Open with" tap on a
+    // text file while the app is already running re-enters MainActivity
+    // via onNewIntent instead of onCreate. Capture the new intent and
+    // navigate the WebView to /scan to surface the import.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!consumeIncomingIntent(intent)) return
+        val addr = goApp?.address() ?: return
+        webView.loadUrl(addr.trimEnd('/') + "/scan")
+    }
+
+    /**
+     * Extract a text payload from an incoming intent (file-open or share).
+     * On success, stores it in `pendingImport` and returns true so callers
+     * can decide whether to navigate. Returns false for non-import intents
+     * (the regular LAUNCHER intent path) so we don't disturb the default
+     * landing page.
+     */
+    private fun consumeIncomingIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
+        val text: String? = when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data?.let { readUriContent(it) }
+            Intent.ACTION_SEND -> {
+                // Share Sheet path. EXTRA_TEXT wins when the source app
+                // shared a plain string (e.g. selected text in another
+                // app); EXTRA_STREAM is the URI of a shared file.
+                val extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                if (!extraText.isNullOrBlank()) {
+                    extraText
+                } else {
+                    @Suppress("DEPRECATION")
+                    val streamUri: Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                    streamUri?.let { readUriContent(it) }
+                }
+            }
+            else -> null
+        }
+        if (text.isNullOrEmpty()) return false
+        pendingImport = text
+        return true
+    }
+
+    /**
+     * Read a content:// or file:// URI as UTF-8 text, capped at 5 MB.
+     * Beyond that the resolver textarea becomes a UI hog (the rest of the
+     * file's IPs would still parse, but the editor would lag); the user
+     * should split their list.
+     */
+    private fun readUriContent(uri: Uri): String? {
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val maxBytes = 5 * 1024 * 1024
+                val baos = ByteArrayOutputStream()
+                val buf = ByteArray(64 * 1024)
+                var total = 0
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    val room = maxBytes - total
+                    if (room <= 0) break
+                    val take = if (n > room) room else n
+                    baos.write(buf, 0, take)
+                    total += take
+                    if (take < n) break
+                }
+                baos.toString(Charsets.UTF_8.name())
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun configureWebView(wv: WebView) {
@@ -95,6 +198,11 @@ class MainActivity : ComponentActivity() {
             allowUniversalAccessFromFileURLs = false
             mixedContentMode  = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
+        // Expose the "intent → page" bridge. Safe to add unconditionally:
+        // it just hands back the pending import buffer we captured from
+        // an Open-with / Share-with intent. The WebView only loads the
+        // loopback Go server, so no third-party JS can call it.
+        wv.addJavascriptInterface(ImportBridge(), "AndroidImport")
         wv.webViewClient = object : WebViewClient() {
             // Loopback-only; everything else dropped (not handed off).
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
@@ -202,7 +310,12 @@ class MainActivity : ComponentActivity() {
             goApp = app
         }
 
-        val url = app.address() // e.g. "http://127.0.0.1:39000/"
+        // If we already captured a pending import in onCreate (cold start
+        // via "Open with" or Share Sheet), skip the default landing page
+        // and go straight to /scan — scan.js will pull the IPs out of
+        // window.AndroidImport.consume() on init.
+        val base = app.address().trimEnd('/')
+        val url = if (pendingImport != null) "$base/scan" else "$base/"
         waitForHealthThenLoad(url)
     }
 

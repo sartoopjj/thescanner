@@ -61,6 +61,7 @@
       <progress id="deep-bar" value="0" max="100"></progress>
       <div class="progress-counters">
         <span><span data-i18n="scan.l2_progress">Scored</span>: <strong id="p-l2-scored">0</strong> / <strong id="p-l2-elig">0</strong></span>
+        <span><span data-i18n="lists.queries">Queries</span>: <strong id="p-l2-queries">—</strong></span>
       </div>
     </div>
 
@@ -86,9 +87,17 @@
       </div>
     </div>
 
-    <div class="row">
+    <div class="row export-row">
       <a id="export-txt" class="btn ghost" data-i18n="results.export">Export OK IPs (.txt)</a>
       <a id="export-csv" class="btn ghost" data-i18n="results.exportCSV">Export all (.csv)</a>
+      <!-- Top-N export: client-side; sorts OK results by L2Score DESC
+           (then RTT ASC) and emits the top N IPs. Skipped when deep
+           scan hasn't run — pure shallow lists have no score to rank. -->
+      <span class="export-topn">
+        <span data-i18n="results.top">Top</span>
+        <input id="export-topn-input" type="number" min="1" max="100000" value="100" inputmode="numeric">
+        <button type="button" id="export-topn-txt" class="ghost" data-i18n="results.export_topn">Copy/Download top N</button>
+      </span>
     </div>
 
     <div class="table-scroll">
