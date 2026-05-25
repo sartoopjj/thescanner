@@ -4,10 +4,14 @@
 
 قالب روی سیم: [PROTOCOL.md](PROTOCOL.md). انگلیسی: [README.md](README.md).
 
+<!-- ASCII diagram kept in English: Markdown renderers (GitHub, IDEs)
+     mangle the RTL/LTR boundaries around the Persian variant, so the
+     arrows and box edges don't line up. -->
+
 ```
-[کلاینت اسکنر] --DNS-→ [ریزالور عمومی] --بازگشتی→ [سرور اسکنر شما]
-        ↑                                                  │
-        └────── پاسخ احراز‌هویت‌شده روی TXT ────────────────┘
+[scanner-client] --DNS-→ [public resolver] --recursive-→ [your scanner-server]
+       ↑                                                          │
+       └────────── authenticated response over TXT ───────────────┘
 ```
 
 ### نصب سرور

@@ -2,7 +2,7 @@
 
 Resolver-scanning tool. The client sends authenticated DNS queries through public resolvers to an authoritative server you control, and reports which resolvers cleanly forward them.
 
-Wire format: [PROTOCOL.md](PROTOCOL.md). Persian: [README-FA.md](README-FA.md).
+Wire format: [PROTOCOL.md](PROTOCOL.md). فارسی: [README-FA.md](README-FA.md).
 
 ```
 [scanner-client] --DNS-→ [public resolver] --recursive-→ [your scanner-server]
