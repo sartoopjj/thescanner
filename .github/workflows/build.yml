@@ -261,7 +261,11 @@ jobs:
 
   ios-ipa:
     needs: test
-    runs-on: macos-14
+    # macos-15 ships Xcode 16.x. Required because the project file uses
+    # objectVersion = 77 (introduced in Xcode 16 alongside
+    # PBXFileSystemSynchronizedRootGroup) which Xcode 15.4 on macos-14
+    # rejects as "future Xcode project file format (77)".
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -284,9 +288,21 @@ jobs:
           go-version: '1.22'
           cache: true
 
-      - name: Select Xcode
+      # Pick the newest Xcode 16+ present on the runner. The default
+      # /Applications/Xcode.app symlink on macos-15 already points at
+      # Xcode 16.x, but be explicit so a runner-image refresh that
+      # changes the default doesn't silently downgrade us below the
+      # objectVersion the project needs.
+      - name: Select Xcode (16+ required for objectVersion 77)
         if: steps.ios_check.outputs.exists == 'true'
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: |
+          XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n1)
+          if [ -z "$XC" ]; then
+            XC=/Applications/Xcode.app
+          fi
+          echo "Using $XC"
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
 
       - name: Install gomobile + gobind
         if: steps.ios_check.outputs.exists == 'true'
