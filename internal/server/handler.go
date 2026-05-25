@@ -73,10 +73,20 @@ func newPadRng() *mathrand.ChaCha8 {
 }
 
 // fillPad fills b with non-constant bytes via a pooled ChaCha8.
-// See padRng comment in Handler for the rationale.
+// See padRng comment in Handler for the rationale. Uses Uint64 in a
+// loop instead of ChaCha8.Read because Read was added in Go 1.23 and
+// the module is pinned to 1.22.
 func (h *Handler) fillPad(b []byte) {
 	rng := h.padRng.Get().(*mathrand.ChaCha8)
-	_, _ = rng.Read(b)
+	i := 0
+	for ; i+8 <= len(b); i += 8 {
+		binary.LittleEndian.PutUint64(b[i:], rng.Uint64())
+	}
+	if i < len(b) {
+		var tail [8]byte
+		binary.LittleEndian.PutUint64(tail[:], rng.Uint64())
+		copy(b[i:], tail[:len(b)-i])
+	}
 	h.padRng.Put(rng)
 }
 
