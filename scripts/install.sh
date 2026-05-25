@@ -296,12 +296,23 @@ install_binary() {
     install -m 0755 "$src" "${BIN_DIR}/${BINARY_NAME}"
   else
     echo -e "fetching latest release from github.com/${GITHUB_REPO}…"
-    local tag
-    tag="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" | grep -m1 tag_name | cut -d'"' -f4)"
+    # Buffer the API response into a variable BEFORE parsing, instead of
+    # piping curl → grep. With set -o pipefail in effect, `grep -m1`
+    # closes the pipe early, curl gets SIGPIPE and exits 23 ("Failure
+    # writing output to destination"), and the whole installer dies.
+    local api_resp tag
+    api_resp="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest")" \
+      || { echo -e "${red}could not fetch release info from GitHub${plain}" >&2; exit 1; }
+    if command -v jq >/dev/null 2>&1; then
+      tag="$(printf '%s' "$api_resp" | jq -r '.tag_name // empty')"
+    else
+      tag="$(printf '%s\n' "$api_resp" | grep '"tag_name"' | head -n1 | cut -d'"' -f4)"
+    fi
     [[ -n "$tag" ]] || { echo -e "${red}could not resolve latest tag${plain}" >&2; exit 1; }
     local url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/${BINARY_NAME}-${OS}-${ARCH}"
     local tmp; tmp="$(mktemp)"
-    curl -fsSL "$url" -o "$tmp"
+    curl -fsSL "$url" -o "$tmp" \
+      || { rm -f "$tmp"; echo -e "${red}download failed: ${url}${plain}" >&2; exit 1; }
     install -m 0755 "$tmp" "${BIN_DIR}/${BINARY_NAME}"
     rm -f "$tmp"
   fi
