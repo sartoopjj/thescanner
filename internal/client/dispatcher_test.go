@@ -153,7 +153,7 @@ func TestList_RecordTransientFail(t *testing.T) {
 // Verifies the deferred-retry invariant under concurrency: every IP that
 // gets pushed as a retry (attempts > 0) is observed by some worker AFTER
 // every fresh item has already been observed.
-func TestDispatcher_RetriesDeferredUnderContention(t *testing.T) {
+func TestDispatcher_RetriesInterleavedWithFresh(t *testing.T) {
 	d := newDispatcher()
 	const nFresh = 40
 	for i := 0; i < nFresh; i++ {
@@ -193,21 +193,27 @@ func TestDispatcher_RetriesDeferredUnderContention(t *testing.T) {
 		t.Fatalf("expected %d total items popped, got %d", nFresh*2, len(order))
 	}
 
-	// Sort by the dispatcher-assigned sequence so we can reason about
-	// real pop order (workers race when landing observations into
-	// `order`, but the seq is fixed inside the dispatcher mutex).
 	sort.Slice(order, func(i, j int) bool { return order[i].seq < order[j].seq })
 
+	// New behaviour: ~25% of pops come from the retry queue while fresh
+	// still has work, so the Failed counter starts moving long before
+	// the entire first pass completes on large lists. Verify at least
+	// one retry is interleaved before all fresh items are drained.
+	firstRetry := -1
 	lastFresh := -1
 	for i, p := range order {
+		if p.it.attempts > 0 && firstRetry < 0 {
+			firstRetry = i
+		}
 		if p.it.attempts == 0 {
 			lastFresh = i
 		}
 	}
-	for i, p := range order {
-		if p.it.attempts > 0 && i < lastFresh {
-			t.Fatalf("retry %s popped at seq-idx %d before last fresh at seq-idx %d",
-				p.it.ip, i, lastFresh)
-		}
+	if firstRetry < 0 {
+		t.Fatal("expected some retries to be popped")
+	}
+	if firstRetry > lastFresh {
+		t.Fatalf("first retry at idx %d came after last fresh at idx %d — interleave broken",
+			firstRetry, lastFresh)
 	}
 }

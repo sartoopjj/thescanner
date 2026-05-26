@@ -10,10 +10,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>thescanner</title>
 <script>
-  // Apply the saved theme BEFORE the stylesheet evaluates, so the page
-  // doesn't flash dark-then-light (or vice versa). localStorage is the
-  // primary signal; the i18n bootstrap pushes the config value here on
-  // every save so this stays in sync.
   (function () {
     try {
       var t = localStorage.getItem("theme");
@@ -22,17 +18,22 @@
       }
     } catch (e) {}
   })();
-  // Hide the body until i18n.js applies the translation bundle. Without
-  // this the page renders with the English data-i18n fallback strings
-  // first, then JS overwrites them ~50–200 ms later — a noticeable
-  // English-then-Persian "flash" for fa users. The class is removed at
-  // the end of i18n.js, restoring visibility in one repaint.
+  // Translation bundle inlined by the server template — no /api/i18n
+  // round-trip, so window.tt is available SYNCHRONOUSLY before body
+  // scripts run. Eliminates the English→Persian flash.
+  window.__i18nBundle = {{.I18nBundleJSON}};
+  window.__i18nChosen = {{.I18nChosen}};
+  window.tt = function (k, fb) {
+    var b = window.__i18nBundle;
+    return (b && b[k]) || fb || k;
+  };
+  // Hide body until the [data-i18n] pass runs (still needed because
+  // body content has English fallback strings). With the inline bundle
+  // this completes in single-digit ms, not the prior ~1s.
   document.documentElement.classList.add("i18n-pending");
-  // Safety: if i18n.js never loads (network glitch, blocked script),
-  // reveal after 1.2 s so the user isn't left staring at a blank page.
   setTimeout(function () {
     document.documentElement.classList.remove("i18n-pending");
-  }, 1200);
+  }, 800);
 </script>
 <link rel="stylesheet" href="/static/style.css">
 {{end}}

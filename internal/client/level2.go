@@ -175,7 +175,18 @@ func scoreOne(ctx context.Context, t *Tester, l *List, ip string, per int) {
 	r.UpdatedAt = time.Now().UTC()
 	l.Meta.L2Scored = countL2Scored(l)
 	l.Meta.Updated = time.Now().UTC()
+	persisted := *r
+	lib := l.lib
+	id := l.Meta.ID
 	l.mu.Unlock()
+
+	// Append the deep-scan outcome to results.jsonl so it survives
+	// process restart and shows up in the table on next reload. Each
+	// IP can get multiple lines (one shallow, one deep) — Get() takes
+	// the last one as the truth, which is what we want.
+	if lib != nil {
+		_ = lib.persistResult(id, &persisted)
+	}
 }
 
 func countL2Scored(l *List) int {

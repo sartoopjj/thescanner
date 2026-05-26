@@ -1003,6 +1003,38 @@ a, button, [role="button"], input, select, textarea, .btn, .ghost,
   touch-action: manipulation;
 }
 
+/* select.ghost: <select> rendered like a ghost button. Used by the
+   scan page's sample-list picker (and any future inline select that
+   sits next to ghost buttons). */
+select.ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: .65rem 2.2rem .65rem 1.2rem;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% + 2px),
+    calc(100% - 12px) calc(50% + 2px);
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+}
+select.ghost:hover  { background-color: var(--surface-2); }
+select.ghost:focus  { outline: 2px solid var(--accent); outline-offset: 1px; }
+[dir="rtl"] select.ghost {
+  padding: .65rem 1.2rem .65rem 2.2rem;
+  background-position: 18px calc(50% + 2px), 12px calc(50% + 2px);
+}
+select.ghost option { background: var(--surface); color: var(--fg); }
+
 /* ------- list-page action buttons (Resume/Pause/Deep/Rescan/...) -------
    Uniform-width tiles in a responsive grid: 2 columns on phones, more
    on wider viewports. Replaces the old flex-wrap row that produced
@@ -1036,10 +1068,9 @@ a, button, [role="button"], input, select, textarea, .btn, .ghost,
   .list-actions { grid-template-columns: 1fr 1fr; gap: .45rem; }
   .list-actions > button { padding: .6rem .5rem; font-size: .92rem; }
 }
-/* The destructive Delete button gets its own row at the end — visually
-   separates it from the other actions so an accidental tap is less
-   likely. */
-.list-actions > #btn-delete { grid-column: 1 / -1; }
+/* Delete flows in the grid alongside the other actions. The .danger
+   class already gives it a distinct red look so users don't tap it by
+   accident — no need to also reserve a whole row for it. */
 
 /* ------- top-N export row -------
    Sits in the same `.row` as the .txt / .csv export buttons. On

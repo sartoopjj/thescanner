@@ -199,16 +199,51 @@ jobs:
             -trimpath \
             -ldflags="${LDFLAGS}" -o android/app/libs/scanner.aar ./mobile
 
+      # Hard-fail when ANY of the four signing secrets are missing. The
+      # previous behaviour fell back to debug signing, which produces an
+      # APK with a different signing key than the release stream — every
+      # user has to uninstall before the update will install ("App not
+      # installed" / "App conflict"). Refusing to build is strictly
+      # better than shipping an unusable update.
+      - name: Verify signing secrets are configured
+        env:
+          KEYSTORE_BASE64:    ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD:  ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS:          ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD:       ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=()
+          [ -z "$KEYSTORE_BASE64"   ] && missing+=("KEYSTORE_BASE64")
+          [ -z "$KEYSTORE_PASSWORD" ] && missing+=("KEYSTORE_PASSWORD")
+          [ -z "$KEY_ALIAS"         ] && missing+=("KEY_ALIAS")
+          [ -z "$KEY_PASSWORD"      ] && missing+=("KEY_PASSWORD")
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required signing secrets: ${missing[*]}"
+            echo "Set them in Settings → Secrets → Actions before pushing release tags."
+            echo "Building without them would ship a debug-signed APK that conflicts with existing installs."
+            exit 1
+          fi
+          echo "All four signing secrets present."
+
       - name: Decode signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > android/app/thescanner.jks
-            echo "Keystore decoded successfully"
-          else
-            echo "No KEYSTORE_BASE64 secret set — will use debug signing"
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/thescanner.jks
+          if [ ! -s android/app/thescanner.jks ]; then
+            echo "::error::Decoded keystore is empty — KEYSTORE_BASE64 is malformed."
+            exit 1
           fi
+          # Quick sanity check: keytool should be able to read it with
+          # the configured password. Failing here is way clearer than
+          # a 200-line Gradle traceback later.
+          if ! keytool -list -keystore android/app/thescanner.jks \
+                       -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+                       -alias "${{ secrets.KEY_ALIAS }}" >/dev/null 2>&1; then
+            echo "::error::Keystore + password + alias don't match. Check KEYSTORE_PASSWORD and KEY_ALIAS."
+            exit 1
+          fi
+          echo "Keystore decoded and verified."
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -231,27 +266,56 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME:-dev}
           if [ ! -x ./gradlew ]; then gradle wrapper --gradle-version 8.10.2; fi
-          # Decode step writes the keystore to app/thescanner.jks (not
-          # keystore.jks). Pick assembleRelease when EITHER name is on
-          # disk so signed builds work no matter which file got dropped.
-          if [ -f app/thescanner.jks ] || [ -f app/keystore.jks ]; then
-            BT=release; TASK=assembleRelease
-          else
-            BT=debug; TASK=assembleDebug
+
+          # Hard-require the keystore on disk. The "Verify signing
+          # secrets" + "Decode signing keystore" steps above already
+          # bailed out if anything was missing, so by this point the
+          # file MUST exist. If it doesn't, the previous fallback to
+          # debug-signed would silently break the update-in-place
+          # contract — fail loudly instead.
+          if [ ! -f app/thescanner.jks ]; then
+            echo "::error::app/thescanner.jks missing despite secrets being verified."
+            exit 1
           fi
 
-          # Pass 1 — per-ABI split APKs.
-          ./gradlew --no-daemon --build-cache --stacktrace $TASK
+          # Pass 1 — per-ABI split APKs (release-signed, never debug).
+          ./gradlew --no-daemon --build-cache --stacktrace assembleRelease
 
-          APK_DIR=app/build/outputs/apk/$BT
-          cp "$APK_DIR"/app-arm64-v8a-${BT}.apk    ../artifacts/thescanner-android-${VERSION}-arm64-v8a.apk
-          cp "$APK_DIR"/app-armeabi-v7a-${BT}.apk  ../artifacts/thescanner-android-${VERSION}-armeabi-v7a.apk
-          cp "$APK_DIR"/app-x86-${BT}.apk          ../artifacts/thescanner-android-${VERSION}-x86.apk
-          cp "$APK_DIR"/app-x86_64-${BT}.apk       ../artifacts/thescanner-android-${VERSION}-x86_64.apk
+          APK_DIR=app/build/outputs/apk/release
+          cp "$APK_DIR"/app-arm64-v8a-release.apk    ../artifacts/thescanner-android-${VERSION}-arm64-v8a.apk
+          cp "$APK_DIR"/app-armeabi-v7a-release.apk  ../artifacts/thescanner-android-${VERSION}-armeabi-v7a.apk
+          cp "$APK_DIR"/app-x86-release.apk          ../artifacts/thescanner-android-${VERSION}-x86.apk
+          cp "$APK_DIR"/app-x86_64-release.apk       ../artifacts/thescanner-android-${VERSION}-x86_64.apk
 
           # Pass 2 — universal APK.
-          ./gradlew --no-daemon --build-cache -PuniversalBuild=true $TASK
-          cp "$APK_DIR"/app-${BT}.apk              ../artifacts/thescanner-android-${VERSION}-universal.apk
+          ./gradlew --no-daemon --build-cache -PuniversalBuild=true assembleRelease
+          cp "$APK_DIR"/app-release.apk              ../artifacts/thescanner-android-${VERSION}-universal.apk
+
+      # Final defense: confirm every produced APK is actually signed
+      # with the expected certificate. apksigner verify -v dumps the
+      # SHA-256 fingerprint of each signer; the grep step ensures the
+      # output mentions a non-debug certificate. This catches the case
+      # where the build "succeeds" but Gradle silently produced an
+      # unsigned APK due to a misconfigured signingConfig.
+      - name: Verify APK signatures
+        run: |
+          # Find apksigner from the latest build-tools the runner has.
+          APKSIGNER="$(find $ANDROID_HOME/build-tools -name apksigner -type f 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found in $ANDROID_HOME/build-tools/*"
+            exit 1
+          fi
+          echo "Using $APKSIGNER"
+          failed=0
+          for apk in artifacts/thescanner-android-*.apk; do
+            echo "--- verifying $apk"
+            if ! "$APKSIGNER" verify --verbose "$apk"; then
+              echo "::error::$apk failed apksigner verification."
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ] || exit 1
+          echo "All APKs verified."
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4

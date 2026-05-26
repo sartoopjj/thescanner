@@ -132,22 +132,122 @@
     return fresh.length;
   }
 
+  // Out-of-band IP buffer for huge imports. The DOM textarea chokes
+  // around 50k–100k lines (paint + selection cost is brutal), so we
+  // keep large imports OUT of it: parse the file into this Set, show
+  // a count + preview, and stream-upload at submit time via multipart
+  // (no JSON.stringify of a 100 MB string). There is no fixed cap —
+  // millions of IPs are an intentional use case for this tool.
+  let pendingFile = null;     // File handle from <input type=file>
+  let pendingCount = 0;       // approximate IP count for the badge
+
+  // Threshold above which we stop mirroring the file into the textarea
+  // and route everything through the out-of-band buffer + multipart
+  // upload path. Below this the existing inline experience still works.
+  const TEXTAREA_THRESHOLD = 5000;
+
   document.getElementById("resolver-import").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     try {
-      const text  = await file.text();
-      const lines = extractResolvers(text);
-      const added = appendLines(lines);
-      if (added === 0 && lines.length === 0) {
-        countEl.textContent = tt("scan.no_ips_in_file", "no IPs found in file");
-        setTimeout(recount, 2500);
+      // For very small files we can still parse-and-merge into the
+      // textarea so deduping with manually-typed IPs works naturally.
+      // For anything bigger we keep the parsed IPs out of the DOM and
+      // upload the original file directly via multipart at submit.
+      if (file.size <= 256 * 1024) {
+        const text  = await file.text();
+        const lines = extractResolvers(text);
+        const added = appendLines(lines);
+        if (added === 0 && lines.length === 0) {
+          countEl.textContent = tt("scan.no_ips_in_file", "no IPs found in file");
+          setTimeout(recount, 2500);
+        }
+        return;
       }
+
+      // Big import: count IPs without dumping into the DOM. We still
+      // need a rough count to display; iterate the regex over the text
+      // once, but discard the string immediately after.
+      const text = await file.text();
+      const lines = extractResolvers(text);
+      pendingFile  = file;
+      pendingCount = lines.length;
+      // Drop the parsed array — we only kept it for the count.
+      // The actual upload reads `pendingFile` directly via multipart.
+      resolversEl.value = "";
+      const note = tt("scan.imported_pending",
+        "{n} IPs loaded from {name} — they'll upload when you press Start.")
+        .replace("{n}", pendingCount.toLocaleString())
+        .replace("{name}", file.name);
+      resolversEl.placeholder = note;
+      countEl.textContent = `${pendingCount.toLocaleString()}`;
     } catch (err) {
       countEl.textContent = "import error: " + err;
       setTimeout(recount, 3000);
     } finally {
       e.target.value = "";
+    }
+  });
+
+  // Sample lists dropdown — embedded resolver sets shipped in the
+  // binary. Selecting one fetches the file and feeds it through the
+  // same pending-file path so big samples don't bloat the textarea.
+  (async function loadSamples() {
+    const sel = document.getElementById("sample-select");
+    if (!sel) return;
+    try {
+      const r = await fetch("/api/samples");
+      const j = await r.json();
+      const samples = j.samples || [];
+      if (samples.length === 0) { sel.hidden = true; return; }
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = tt("scan.sample_picker", "Use sample list…");
+      sel.appendChild(placeholder);
+      samples.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.label;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", async () => {
+        const id = sel.value;
+        if (!id) return;
+        try {
+          const r = await fetch("/api/samples/" + encodeURIComponent(id));
+          if (!r.ok) throw new Error("fetch failed");
+          const blob = await r.blob();
+          const file = new File([blob], id, { type: "text/plain" });
+          const text = await file.text();
+          const lines = extractResolvers(text);
+          if (file.size <= 256 * 1024) {
+            resolversEl.value = "";
+            appendLines(lines);
+          } else {
+            pendingFile  = file;
+            pendingCount = lines.length;
+            resolversEl.value = "";
+            resolversEl.placeholder = tt("scan.imported_pending",
+              "{n} IPs loaded from {name} — they'll upload when you press Start.")
+              .replace("{n}", pendingCount.toLocaleString())
+              .replace("{name}", file.name);
+            countEl.textContent = `${pendingCount.toLocaleString()}`;
+          }
+        } catch (err) {
+          countEl.textContent = "sample load failed: " + err;
+          setTimeout(recount, 3000);
+        } finally {
+          sel.value = "";
+        }
+      });
+    } catch (_) { sel.hidden = true; }
+  })();
+
+  resolversEl.addEventListener("input", () => {
+    if (pendingFile && resolversEl.value.trim().length > 0) {
+      pendingFile = null;
+      pendingCount = 0;
+      resolversEl.placeholder = "";
     }
   });
 
@@ -168,26 +268,59 @@
     recount();
   });
 
+  let submitting = false;
   async function create(autoStart) {
-    const body = {
-      kind:      kindSel.value,
-      name:      nameEl.value.trim(),
-      server:    kindSel.value === "shallow" ? sel.value : "",
-      resolvers: resolversEl.value,
-      auto_start: autoStart && kindSel.value === "shallow",
-    };
-    const r = await fetch("/api/lists", {
-      method:  "POST",
-      headers: { "content-type": "application/json" },
-      body:    JSON.stringify(body)
-    });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      showError(j);
-      return;
+    if (submitting) return;
+    submitting = true;
+    const isManual = kindSel.value === "manual";
+    const autoStartEffective = autoStart && !isManual;
+
+    const btnStart = document.getElementById("btn-create");
+    const btnSave  = document.getElementById("btn-create-only");
+    const origStart = btnStart.textContent;
+    const origSave  = btnSave.textContent;
+    btnStart.disabled = true;
+    btnSave.disabled  = true;
+    btnStart.textContent = tt("scan.preparing", "Preparing list…");
+
+    let r;
+    try {
+      if (pendingFile) {
+        const fd = new FormData();
+        fd.append("kind",       kindSel.value);
+        fd.append("name",       nameEl.value.trim());
+        fd.append("server",     isManual ? "" : sel.value);
+        fd.append("auto_start", autoStartEffective ? "1" : "");
+        fd.append("resolvers_file", pendingFile, pendingFile.name);
+        r = await fetch("/api/lists", { method: "POST", body: fd });
+      } else {
+        const body = {
+          kind:       kindSel.value,
+          name:       nameEl.value.trim(),
+          server:     isManual ? "" : sel.value,
+          resolvers:  resolversEl.value,
+          auto_start: autoStartEffective,
+        };
+        r = await fetch("/api/lists", {
+          method:  "POST",
+          headers: { "content-type": "application/json" },
+          body:    JSON.stringify(body)
+        });
+      }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        showError(j);
+        return;
+      }
+      const meta = await r.json();
+      location.href = "/list?id=" + encodeURIComponent(meta.id);
+    } finally {
+      submitting = false;
+      btnStart.disabled = false;
+      btnSave.disabled  = false;
+      btnStart.textContent = origStart;
+      btnSave.textContent  = origSave;
     }
-    const meta = await r.json();
-    location.href = "/list?id=" + encodeURIComponent(meta.id);
   }
   document.getElementById("btn-create").addEventListener("click", () => create(true));
   document.getElementById("btn-create-only").addEventListener("click", () => create(false));

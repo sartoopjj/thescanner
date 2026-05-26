@@ -49,6 +49,16 @@ type ScanCfg struct {
 	// = less noise. Default 30 (≈3% extra queries).
 	NoiseEnabled bool `json:"noise_enabled"`
 	NoiseEvery   int  `json:"noise_every"`
+
+	// Random "look human" pauses. Every `Every` queries the scan has
+	// fired globally (across all workers), ALL workers stop for a
+	// random duration in [Min, Max] ms before continuing. Off-by-
+	// default would be invisible; ON-by-default means stealth out of
+	// the box and users explicitly opt out when they want raw speed.
+	RandomPauseEnabled bool `json:"random_pause_enabled"`
+	RandomPauseEvery   int  `json:"random_pause_every"`
+	RandomPauseMinMs   int  `json:"random_pause_min_ms"`
+	RandomPauseMaxMs   int  `json:"random_pause_max_ms"`
 }
 
 type Level2Cfg struct {
@@ -81,13 +91,21 @@ func DefaultData() ConfigData {
 			// minutes instead of hours.
 			MinQuery: 30, MaxQuery: 50,
 			MinResponse: 200, MaxResponse: 500,
-			EDNS0: true, Parallel: 1000, Duplicate: 2,
+			EDNS0: true, Parallel: 1000, Duplicate: 1,
 			TimeoutSeconds: 5,
 			Retries:        2,
 			SubnetExpand:   false,
 			SubnetMask:     28,
 			NoiseEnabled:   true,
-			NoiseEvery:     30,
+			NoiseEvery:     500,
+			// Random global pauses: every ~10k attempts pause all
+			// workers 5–15s. Defaults ON so users get stealthy timing
+			// out of the box; disable in Config if you're scanning
+			// trusted DNS and want raw speed.
+			RandomPauseEnabled: true,
+			RandomPauseEvery:   20000,
+			RandomPauseMinMs:   3000,
+			RandomPauseMaxMs:   10000,
 		},
 		Level2: Level2Cfg{QueriesPerResolver: 50, Parallel: 300},
 		// Language deliberately blank — the UI shows a first-run picker
@@ -109,16 +127,34 @@ func LoadConfig(path string) (*Config, error) {
 		// Accept legacy single-domain entries by retrying with a shim.
 		if mig, ok := migrateLegacy(raw); ok {
 			c.data = mig
+			c.fillRandomPauseDefaults()
 			return c, nil
 		}
 		return nil, err
 	}
+	c.fillRandomPauseDefaults()
 	// Forward-compat: if Domains is empty but legacy "domain" was present
 	// in the raw JSON, migrate.
 	if needs, mig, ok := maybeMigrate(raw, c.data); needs && ok {
 		c.data = mig
 	}
 	return c, nil
+}
+
+// fillRandomPauseDefaults applies sensible RandomPause* values to any
+// loaded config where they're missing (zeros). Without this, a config
+// written by an older build that didn't have the fields would override
+// DefaultData's enabled-by-default with disabled+zeros, leaving the
+// stealth pauses silently off until the user re-saves Config.
+func (c *Config) fillRandomPauseDefaults() {
+	d := DefaultData().Scan
+	s := &c.data.Scan
+	if s.RandomPauseEvery <= 0 {
+		s.RandomPauseEnabled = d.RandomPauseEnabled
+		s.RandomPauseEvery = d.RandomPauseEvery
+		s.RandomPauseMinMs = d.RandomPauseMinMs
+		s.RandomPauseMaxMs = d.RandomPauseMaxMs
+	}
 }
 
 // maybeMigrate looks at raw JSON for any servers that have a single "domain"

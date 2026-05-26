@@ -2,9 +2,11 @@ package client
 
 import (
 	"context"
+	"math/rand"
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -43,6 +45,8 @@ func Level1(ctx context.Context, tester *Tester, l *List, cfg ScanCfg, save func
 		d.push(workItem{ip: ip, attempts: prev})
 	}
 
+	throttle := &globalThrottle{}
+
 	doneCh := make(chan struct{})
 	go func() {
 		t := time.NewTicker(5 * time.Second)
@@ -62,12 +66,21 @@ func Level1(ctx context.Context, tester *Tester, l *List, cfg ScanCfg, save func
 		}
 	}()
 
+	// Global random-pause throttler. Watches Meta.Attempted and, every
+	// RandomPauseEvery queries fired in TOTAL (not per worker), sets a
+	// shared no-before deadline. Workers check the deadline before each
+	// pop and sleep until it passes. So when the throttler triggers,
+	// the entire scan pauses for 5–15s, not just one worker.
+	if cfg.RandomPauseEnabled && cfg.RandomPauseEvery > 0 && cfg.RandomPauseMaxMs > 0 {
+		go runRandomPauseThrottle(ctx, doneCh, &l.Meta.Attempted, throttle, cfg)
+	}
+
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.Parallel; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			worker(ctx, d, l, tester, cfg, retries, mask)
+			worker(ctx, d, l, tester, cfg, retries, mask, throttle)
 		}()
 	}
 	wg.Wait()
@@ -77,13 +90,69 @@ func Level1(ctx context.Context, tester *Tester, l *List, cfg ScanCfg, save func
 	}
 }
 
+// globalThrottle is a single shared deadline used by all workers to
+// coordinate the random-pause feature: when a throttler sets noBefore
+// in the future, every worker sleeps until that time before pulling
+// another item from the dispatcher.
+type globalThrottle struct {
+	noBefore atomic.Int64
+}
+
+func (t *globalThrottle) wait(ctx context.Context) {
+	nb := t.noBefore.Load()
+	if nb == 0 {
+		return
+	}
+	delay := nb - time.Now().UnixNano()
+	if delay <= 0 {
+		return
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Duration(delay)):
+	}
+}
+
+func runRandomPauseThrottle(ctx context.Context, doneCh <-chan struct{},
+	attemptedPtr *int64, throttle *globalThrottle, cfg ScanCfg) {
+	lo, hi := cfg.RandomPauseMinMs, cfg.RandomPauseMaxMs
+	if hi < lo {
+		hi = lo
+	}
+	every := int64(cfg.RandomPauseEvery)
+	last := atomic.LoadInt64(attemptedPtr)
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-doneCh:
+			return
+		case <-t.C:
+			cur := atomic.LoadInt64(attemptedPtr)
+			if cur-last < every {
+				continue
+			}
+			last = cur
+			ms := lo
+			if span := hi - lo; span > 0 {
+				ms = lo + rand.Intn(span+1)
+			}
+			until := time.Now().Add(time.Duration(ms) * time.Millisecond).UnixNano()
+			throttle.noBefore.Store(until)
+		}
+	}
+}
+
 type workItem struct {
 	ip       string
 	attempts int
 }
 
-func worker(ctx context.Context, d *dispatcher, l *List, tester *Tester, cfg ScanCfg, retries, mask int) {
+func worker(ctx context.Context, d *dispatcher, l *List, tester *Tester, cfg ScanCfg, retries, mask int, throttle *globalThrottle) {
 	for {
+		throttle.wait(ctx)
 		it, ok := d.pop()
 		if !ok {
 			return
@@ -103,6 +172,7 @@ func worker(ctx context.Context, d *dispatcher, l *List, tester *Tester, cfg Sca
 		l.MarkInProgress(it.ip)
 		r := runOne(ctx, tester, it.ip, cfg.Duplicate)
 		r.Attempts = it.attempts + 1
+		atomic.AddInt64(&l.Meta.Attempted, 1)
 
 		switch {
 		case r.Status == StatusOK:

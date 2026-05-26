@@ -31,9 +31,11 @@
   function fmtDuration(ms) {
     if (!ms || ms < 0) return "—";
     const s = Math.floor(ms / 1000);
-    const h = Math.floor(s / 3600);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
+    if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${m}m`;
     if (m > 0) return `${m}m ${sec}s`;
     return `${sec}s`;
@@ -48,6 +50,11 @@
   // ---- meta + progress ------------------------------------------------
   let meta = null;
   let startedAt = null;
+  // Rolling samples of (timestamp, done) for ETA. Keeps the last ~30 s
+  // of progress so ETA tracks the CURRENT rate, not the all-time
+  // average — closer to how download managers report time-remaining.
+  let progressSamples = [];
+  let smoothedRatePerMs = 0;
 
   // Pending-transition state machine: when the user clicks Pause / Resume
   // / Deep, the API returns immediately but the actual goroutine cleanup
@@ -60,6 +67,13 @@
   // the UI permanently).
   let pending = null; // { target: "paused" | "scanning" | "deep", deadline: ms, label: i18n key }
 
+  function fmtInt(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function setNum(id, n) {
+    const el = document.getElementById(id);
+    el.textContent = fmtInt(n);
+    el.dir = "ltr";
+  }
+
   function applyMeta(m) {
     meta = m;
     document.getElementById("m-name").textContent = m.name;
@@ -68,10 +82,10 @@
     document.getElementById("m-kind").textContent    = kindLabel(m.kind);
     document.getElementById("m-server").textContent  = m.server || "—";
     document.getElementById("m-created").textContent = fmtDate(m.created);
-    document.getElementById("m-total").textContent   = m.total;
-    document.getElementById("m-ok").textContent      = m.ok;
-    document.getElementById("m-failed").textContent  = m.failed;
-    document.getElementById("m-l2").textContent      = m.l2_scored || 0;
+    setNum("m-total",  m.total);
+    setNum("m-ok",     m.ok);
+    setNum("m-failed", m.failed);
+    setNum("m-l2",     m.l2_scored || 0);
 
     // Resolve the pending transition: cleared when status reaches the
     // target OR the deadline expires (so the UI eventually unfreezes
@@ -97,51 +111,45 @@
     const running = (m.status === "scanning" || m.status === "deep");
     const hasOK   = m.ok > 0 || m.kind === "manual";
 
-    // Lookup the buttons once — we touch their text/disabled below in
-    // both branches.
-    const stopBtn   = document.getElementById("btn-pause");
-    const startBtn  = document.getElementById("btn-resume");
+    const toggleBtn = document.getElementById("btn-toggle");
     const deepBtn2  = document.getElementById("btn-deep");
 
     if (pending) {
-      // Force the appropriate "in-flight" button visible, disabled,
-      // with a localized "Stopping…/Resuming…/Starting…" label. Hide
-      // the others so the user can't fire a conflicting action.
-      const isStop = pending.target === "paused";
-      if (isStop) {
-        show("btn-pause",  true);  stopBtn.disabled = true;
-        stopBtn.textContent = tt(pending.label, "Stopping…");
-        show("btn-resume", false);
+      toggleBtn.disabled = true;
+      deepBtn2.disabled  = true;
+      if (pending.target === "paused") {
+        toggleBtn.textContent = tt("scan.stopping", "Stopping…");
+        toggleBtn.dataset.state = "stopping";
+        show("btn-toggle", true);
         show("btn-deep",   false);
+      } else if (pending.target === "deep") {
+        deepBtn2.textContent = tt(pending.label, "Starting…");
+        show("btn-deep",   true);
+        show("btn-toggle", false);
       } else {
-        show("btn-pause",  false);
-        if (pending.target === "deep") {
-          show("btn-deep",   true);  deepBtn2.disabled = true;
-          deepBtn2.textContent = tt(pending.label, "Starting…");
-          show("btn-resume", false);
-        } else {
-          show("btn-resume", true);  startBtn.disabled = true;
-          startBtn.textContent = tt(pending.label, "Resuming…");
-          show("btn-deep",   false);
-        }
+        toggleBtn.textContent = tt("scan.resuming", "Resuming…");
+        toggleBtn.dataset.state = "resuming";
+        show("btn-toggle", true);
+        show("btn-deep",   false);
       }
       show("btn-rescan-ok",  false);
       show("btn-rescan-all", false);
     } else {
-      // CRITICAL: when leaving the pending branch we MUST restore the
-      // button labels + disabled state. show() only toggles `hidden`,
-      // so without this every button that we mutated above (textContent
-      // = "Stopping…" / "Resuming…" / "Starting…") would stay stuck
-      // on that label forever after the pending state cleared. That's
-      // what caused the "stuck on Stopping…" bug users kept reporting.
-      stopBtn.disabled  = false;
-      startBtn.disabled = false;
-      deepBtn2.disabled = false;
-      stopBtn.textContent  = tt("scan.pause",     "Pause");
-      startBtn.textContent = tt("scan.resume",    "Resume");
+      toggleBtn.disabled = false;
+      deepBtn2.disabled  = false;
       deepBtn2.textContent = tt("lists.run_deep", "Run deep scan");
-      show("btn-pause",      running);
-      show("btn-resume",     !running && m.status === "paused");
+
+      if (running) {
+        toggleBtn.textContent = tt("scan.pause", "Pause");
+        toggleBtn.dataset.state = "running";
+        show("btn-toggle", true);
+      } else if (m.status === "paused") {
+        toggleBtn.textContent = tt("scan.resume", "Resume");
+        toggleBtn.dataset.state = "paused";
+        show("btn-toggle", true);
+      } else {
+        show("btn-toggle", false);
+      }
       show("btn-deep",       !running && hasOK && m.status !== "deep");
       show("btn-rescan-ok",  !running && m.kind === "shallow" && m.ok > 0);
       show("btn-rescan-all", !running && m.kind === "shallow");
@@ -163,17 +171,28 @@
     card.hidden = !interesting;
     if (!interesting) return;
 
-    // ----- shallow row -----
-    const total  = Math.max(0, m.total);
-    const done   = (m.ok || 0) + (m.failed || 0);
-    const pct    = total > 0 ? Math.floor((done / total) * 100) : 0;
-    const bar    = document.getElementById("shallow-bar");
-    bar.max      = total > 0 ? total : 1;
-    bar.value    = done;
-    document.getElementById("shallow-pct").textContent = pct + "%";
-    document.getElementById("p-ok").textContent     = m.ok || 0;
-    document.getElementById("p-failed").textContent = m.failed || 0;
-    document.getElementById("p-total").textContent  = m.total || 0;
+    const total     = Math.max(0, m.total);
+    const finalDone = (m.ok || 0) + (m.failed || 0);
+    // Prefer the per-attempt counter so the bar moves smoothly even
+    // while transient retries are queued; fall back to ok+failed for
+    // older lists that pre-date the Attempted field.
+    const attempted = Math.max(finalDone, m.attempted || 0);
+    const done      = attempted;
+    const pctRaw = total > 0 ? (done / total) * 100 : 0;
+    const pctStr = pctRaw >= 10   ? Math.floor(pctRaw) + "%"
+                 : pctRaw >= 1    ? pctRaw.toFixed(1) + "%"
+                 : pctRaw >= 0.1  ? pctRaw.toFixed(2) + "%"
+                 : pctRaw >= 0.01 ? pctRaw.toFixed(3) + "%"
+                 : pctRaw > 0     ? pctRaw.toFixed(4) + "%"
+                 : "0%";
+    const bar = document.getElementById("shallow-bar");
+    bar.max   = total > 0 ? total : 1;
+    bar.value = done;
+    const sp = document.getElementById("shallow-pct");
+    sp.textContent = pctStr; sp.dir = "ltr";
+    setNum("p-ok",     m.ok || 0);
+    setNum("p-failed", m.failed || 0);
+    setNum("p-total",  m.total || 0);
 
     // Manual lists skip the shallow phase; relabel the row.
     document.getElementById("shallow-title").textContent =
@@ -188,19 +207,47 @@
     // transition to paused/done/deep/deep_done.
     const shallowRunning = (m.status === "scanning");
     if (shallowRunning) {
-      if (!startedAt) startedAt = Date.now();
-      const elapsed = Date.now() - startedAt;
+      if (!startedAt) { startedAt = Date.now(); progressSamples = []; smoothedRatePerMs = 0; }
+      const now = Date.now();
+      const elapsed = now - startedAt;
       show("p-elapsed-wrap", true);
-      document.getElementById("p-elapsed").textContent = fmtDuration(elapsed);
+      const pe = document.getElementById("p-elapsed");
+      pe.textContent = fmtDuration(elapsed); pe.dir = "ltr";
+
+      progressSamples.push({ t: now, done });
+      const cutoff = now - 60000;
+      while (progressSamples.length > 2 && progressSamples[0].t < cutoff) {
+        progressSamples.shift();
+      }
+      const first = progressSamples[0];
+      const last  = progressSamples[progressSamples.length - 1];
+      const spanMs = last.t - first.t;
+      const dDone  = last.done - first.done;
+      // Need at least 20s of samples AND some progress before computing.
+      // Otherwise the rate is noise (e.g. 0 → 1 across two samples).
+      const haveEnough = spanMs >= 20000 && dDone > 0;
+      const peta = document.getElementById("p-eta");
+      peta.dir = "ltr";
       if (done > 0 && total > done) {
-        const remain = ((elapsed / done) * (total - done)) | 0;
         show("p-eta-wrap", true);
-        document.getElementById("p-eta").textContent = fmtDuration(remain);
+        if (haveEnough) {
+          const inst = dDone / spanMs;
+          // EMA smoothing keeps ETA from flicking on every refresh.
+          smoothedRatePerMs = smoothedRatePerMs === 0
+            ? inst
+            : 0.7 * smoothedRatePerMs + 0.3 * inst;
+          const remainMs = ((total - done) / smoothedRatePerMs) | 0;
+          peta.textContent = fmtDuration(remainMs);
+        } else {
+          peta.textContent = "—";
+        }
       } else {
         show("p-eta-wrap", false);
       }
     } else {
       startedAt = null;
+      progressSamples = [];
+      smoothedRatePerMs = 0;
       show("p-elapsed-wrap", false);
       show("p-eta-wrap", false);
     }
@@ -321,8 +368,11 @@
       actionInFlight = false;
     }
   }
-  document.getElementById("btn-pause" ).onclick = () => action("pause");
-  document.getElementById("btn-resume").onclick = () => action("resume");
+  document.getElementById("btn-toggle").onclick = () => {
+    const st = document.getElementById("btn-toggle").dataset.state;
+    if (st === "running") return action("pause");
+    if (st === "paused")  return action("resume");
+  };
   document.getElementById("btn-deep"  ).onclick = () => action("deep");
 
   // Rescan: create a new list seeded from this one.

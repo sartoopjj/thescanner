@@ -38,7 +38,8 @@
 
     <div class="row">
       <label class="btn ghost" for="resolver-import" data-i18n="scan.import">Import file</label>
-      <input id="resolver-import" type="file" accept=".txt,.csv,text/plain,text/csv" hidden>
+      <input id="resolver-import" type="file" accept=".txt,.csv,.cidr,.list,text/plain,text/csv" hidden>
+      <select id="sample-select" class="ghost"></select>
       <button type="button" id="btn-export-resolvers" class="ghost" data-i18n="scan.export_resolvers">Export list</button>
       <button type="button" id="btn-clear-resolvers" class="ghost" data-i18n="scan.clear">Clear</button>
       <span class="page-info" id="resolver-count"></span>

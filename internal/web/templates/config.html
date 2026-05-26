@@ -105,7 +105,29 @@
           <label data-i18n="field.noise_every">Noise rate (1 per N)</label>
           <button type="button" class="i" data-help="scan.noise_every">i</button>
         </div>
-        <input name="scan.noise_every" type="number" min="5" max="500">
+        <input name="scan.noise_every" type="number" min="5" max="5000">
+      </div>
+
+      <div class="toggle">
+        <div class="toggle-label">
+          <span data-i18n="field.random_pause_enabled">Random pauses</span>
+          <button type="button" class="i" data-help="scan.random_pause_enabled">i</button>
+        </div>
+        <input name="scan.random_pause_enabled" type="checkbox">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <div class="field-head"><label data-i18n="field.random_pause_every">Every N queries</label></div>
+          <input name="scan.random_pause_every" type="number" min="100" max="100000">
+        </div>
+        <div class="field">
+          <div class="field-head"><label data-i18n="field.random_pause_min_ms">Min ms</label></div>
+          <input name="scan.random_pause_min_ms" type="number" min="0" max="60000">
+        </div>
+        <div class="field">
+          <div class="field-head"><label data-i18n="field.random_pause_max_ms">Max ms</label></div>
+          <input name="scan.random_pause_max_ms" type="number" min="0" max="60000">
+        </div>
       </div>
     </section>
 

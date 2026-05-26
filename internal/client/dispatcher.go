@@ -56,7 +56,14 @@ func (d *dispatcher) popWithSeq() (workItem, int64, bool) {
 		if d.cancelled {
 			return workItem{}, 0, false
 		}
-		if len(d.fresh) > 0 {
+		// Interleave: 1-in-4 pops takes from the retry queue when both
+		// queues have work. Without this, retries stack up behind a
+		// huge fresh queue and the Failed counter doesn't move until
+		// the entire first pass is done. The 25% rate is enough to
+		// drain retries continuously while keeping the bulk of
+		// throughput on never-tried IPs.
+		preferRetry := len(d.fresh) > 0 && len(d.retry) > 0 && d.popSeq%4 == 3
+		if !preferRetry && len(d.fresh) > 0 {
 			it := d.fresh[0]
 			d.fresh = d.fresh[1:]
 			d.busy++
@@ -70,8 +77,14 @@ func (d *dispatcher) popWithSeq() (workItem, int64, bool) {
 			d.popSeq++
 			return it, d.popSeq, true
 		}
+		if len(d.fresh) > 0 {
+			it := d.fresh[0]
+			d.fresh = d.fresh[1:]
+			d.busy++
+			d.popSeq++
+			return it, d.popSeq, true
+		}
 		if d.busy == 0 {
-			// No work left and no one is busy — completion.
 			d.cond.Broadcast()
 			return workItem{}, 0, false
 		}

@@ -3,7 +3,9 @@ package web
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -48,6 +50,24 @@ type createListReq struct {
 }
 
 func (s *Server) apiCreateList(w http.ResponseWriter, r *http.Request) {
+	// Two upload modes, decided by Content-Type:
+	//
+	//   application/json  — the legacy + small-paste path. The whole
+	//       request body is buffered into RAM (req.Resolvers is a Go
+	//       string). Fine up to a few hundred kB.
+	//
+	//   multipart/form-data — the big-list path used by the web UI
+	//       when the user imports a file. The "resolvers_file" part
+	//       is parsed line-by-line as it streams off the network,
+	//       so the server never has to hold the whole IP list in a
+	//       single string. This is what lets users scan millions of
+	//       IPs without OOMing the Go process.
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		s.apiCreateListMultipart(w, r)
+		return
+	}
+
 	var req createListReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -89,6 +109,101 @@ func (s *Server) apiCreateList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	writeJSON(w, http.StatusCreated, list.Meta)
+}
+
+// apiCreateListMultipart handles the streaming-upload variant of POST
+// /api/lists, used by the web UI when the user imports a big file
+// (anything that would risk OOMing JSON.stringify on the client or
+// MaxBytesReader on the server). The "resolvers_file" multipart part
+// is consumed line-by-line via bufio.Scanner — we never build the
+// equivalent "huge Go string".
+func (s *Server) apiCreateListMultipart(w http.ResponseWriter, r *http.Request) {
+	// 32 MiB in-memory threshold for form fields; multipart spills
+	// larger parts to a temp file automatically. The "resolvers_file"
+	// part is consumed directly from the body stream below — we don't
+	// touch ParseMultipartForm's resolver-side parsing.
+	reader, err := r.MultipartReader()
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "multipart parse: "+err.Error())
+		return
+	}
+
+	var (
+		kind, name, server string
+		autoStart          bool
+		gotResolvers       bool
+		lib                = s.runner.Library()
+		list               *client.List
+	)
+
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "multipart next: "+err.Error())
+			return
+		}
+		switch part.FormName() {
+		case "kind":
+			b, _ := io.ReadAll(io.LimitReader(part, 32))
+			kind = strings.TrimSpace(string(b))
+		case "name":
+			b, _ := io.ReadAll(io.LimitReader(part, 200))
+			name = strings.TrimSpace(string(b))
+		case "server":
+			b, _ := io.ReadAll(io.LimitReader(part, 200))
+			server = strings.TrimSpace(string(b))
+		case "auto_start":
+			b, _ := io.ReadAll(io.LimitReader(part, 8))
+			autoStart = string(b) == "1" || strings.EqualFold(strings.TrimSpace(string(b)), "true")
+		case "resolvers_file":
+			if list != nil {
+				// Duplicate part — ignore the second one.
+				_, _ = io.Copy(io.Discard, part)
+				break
+			}
+			gotResolvers = true
+			// Create the empty list first so we have somewhere to
+			// stream IPs into. CreateShallowEmpty / CreateManualEmpty
+			// allocate just the meta + maps; nothing per-IP yet.
+			if kind == "manual" {
+				list, err = lib.CreateManualEmpty(name)
+			} else {
+				list, err = lib.CreateShallowEmpty(name, server)
+			}
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			added, perr := lib.AppendIPsFromReader(list, part)
+			if perr != nil {
+				writeErr(w, http.StatusBadRequest, "parse: "+perr.Error())
+				return
+			}
+			if added == 0 {
+				writeErr(w, http.StatusBadRequest, "no IPs found in resolvers_file")
+				return
+			}
+		default:
+			// Drop unknown parts so the body fully drains.
+			_, _ = io.Copy(io.Discard, part)
+		}
+	}
+
+	if !gotResolvers || list == nil {
+		writeErr(w, http.StatusBadRequest, "resolvers_file part is required for multipart upload")
+		return
+	}
+
+	if autoStart && list.Meta.Kind == client.KindShallow {
+		if err := s.runner.StartShallow(list.Meta.ID, server); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	writeJSON(w, http.StatusCreated, list.Meta)
 }
 
@@ -244,6 +359,44 @@ type resultRow struct {
 	Source string  `json:"source,omitempty"`
 }
 
+// collectRowsLive iterates the live List under its read lock and
+// builds the filtered slice the API returns. OK rows come from the
+// Results map (full metadata); fail rows are synthesised from the
+// IPs map since we no longer keep a Result struct per failed IP.
+func collectRowsLive(l *client.List, statusFilter, q string) []resultRow {
+	rows := []resultRow{}
+	wantOK := statusFilter == "" || statusFilter == "ok"
+	wantFail := statusFilter == "" || statusFilter == "fail"
+	if wantOK {
+		l.ForEachResult(func(r *client.Result) {
+			if r.Status != "ok" {
+				return
+			}
+			if q != "" && !strings.Contains(strings.ToLower(r.IP), q) {
+				return
+			}
+			rows = append(rows, resultRow{
+				IP: r.IP, Status: string(r.Status), Reason: string(r.Reason),
+				RTT: r.RTTMs, L2OK: r.L2OK, L2Tot: r.L2Total, L2P95: r.L2P95Ms,
+				L2Sc: r.L2Score, Source: r.Source,
+			})
+		})
+	}
+	if wantFail {
+		l.ForEachIP(func(ip string, st client.Status) {
+			if st != "fail" {
+				return
+			}
+			if q != "" && !strings.Contains(strings.ToLower(ip), q) {
+				return
+			}
+			rows = append(rows, resultRow{IP: ip, Status: "fail"})
+		})
+	}
+	sortRows(rows)
+	return rows
+}
+
 func collectRows(l *client.ListDTO, statusFilter, q string) []resultRow {
 	rows := make([]resultRow, 0, len(l.Results))
 	for _, r := range l.Results {
@@ -259,13 +412,13 @@ func collectRows(l *client.ListDTO, statusFilter, q string) []resultRow {
 			L2Sc: r.L2Score, Source: r.Source,
 		})
 	}
-	// Sort order — "best resolvers first":
-	//   1. status=ok ahead of fail/anything else.
-	//   2. Deep-tested rows ahead of non-deep-tested (so a 0-score
-	//      deep-tested row still ranks above a never-tested one).
-	//   3. Deep-score, highest first.
-	//   4. RTT, lowest first (0 = not measured, push down).
-	//   5. IP, lexicographic.
+	sortRows(rows)
+	return rows
+}
+
+// sortRows: best resolvers first — OK ahead of fail, deep-tested ahead
+// of not, then by L2 score (high), RTT (low), IP (lex).
+func sortRows(rows []resultRow) {
 	sort.Slice(rows, func(i, j int) bool {
 		iOK := rows[i].Status == "ok"
 		jOK := rows[j].Status == "ok"
@@ -289,7 +442,6 @@ func collectRows(l *client.ListDTO, statusFilter, q string) []resultRow {
 		}
 		return rows[i].IP < rows[j].IP
 	})
-	return rows
 }
 
 func (s *Server) apiListResults(w http.ResponseWriter, r *http.Request, id string) {
@@ -298,10 +450,10 @@ func (s *Server) apiListResults(w http.ResponseWriter, r *http.Request, id strin
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	dto := l.Snapshot()
 	statusFilter := strings.ToLower(r.URL.Query().Get("status"))
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	rows := collectRows(&dto, statusFilter, q)
+	rows := collectRowsLive(l, statusFilter, q)
+	meta := l.MetaCopy()
 
 	limit, offset := paginationParams(r)
 	total := len(rows)
@@ -313,7 +465,7 @@ func (s *Server) apiListResults(w http.ResponseWriter, r *http.Request, id strin
 		end = total
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"meta":    dto.Meta,
+		"meta":    meta,
 		"results": rows[offset:end],
 		"offset":  offset,
 		"limit":   limit,
@@ -328,9 +480,9 @@ func (s *Server) apiListExport(w http.ResponseWriter, r *http.Request, id string
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
-	dto := l.Snapshot()
 	statusFilter := strings.ToLower(r.URL.Query().Get("status"))
-	rows := collectRows(&dto, statusFilter, "")
+	rows := collectRowsLive(l, statusFilter, "")
+	meta := l.MetaCopy()
 
 	// Optional "give me the top-N OK resolvers by deep-scan score".
 	//   ?sort=score       — re-sort by L2Score DESC, RTT ASC tiebreaker
@@ -363,7 +515,7 @@ func (s *Server) apiListExport(w http.ResponseWriter, r *http.Request, id string
 	switch format {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(dto.Meta.Name)+`.csv"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(meta.Name)+`.csv"`)
 		cw := csv.NewWriter(w)
 		_ = cw.Write([]string{"ip", "status", "reason", "rtt_ms", "l2_ok", "l2_total", "l2_p95_ms", "l2_score", "source"})
 		for _, x := range rows {
@@ -380,7 +532,7 @@ func (s *Server) apiListExport(w http.ResponseWriter, r *http.Request, id string
 		cw.Flush()
 	case "txt":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(dto.Meta.Name)+`.txt"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(meta.Name)+`.txt"`)
 		for _, x := range rows {
 			if x.Status == "ok" {
 				_, _ = w.Write([]byte(x.IP + "\n"))

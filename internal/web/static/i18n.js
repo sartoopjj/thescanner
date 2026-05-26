@@ -1,36 +1,35 @@
-(async function () {
-  const lang = document.body.dataset.lang || "en";
-  let bundle = {};
-  let chosen = true;
-  try {
-    const r = await fetch("/api/i18n?lang=" + lang);
-    const j = await r.json();
-    bundle = j.strings || {};
-    chosen = j.chosen !== false;
-  } catch (e) { /* fall through to defaults in the DOM */ }
+(function () {
+  // The bundle is inlined by the server template (layout.html) so it's
+  // already on window before this script runs. Falls back to fetch
+  // only if something is wildly wrong (no template render).
+  const bundle = window.__i18nBundle || {};
+  const chosen = window.__i18nChosen !== false;
 
-  document.querySelectorAll("[data-i18n]").forEach(el => {
-    const k = el.getAttribute("data-i18n");
-    if (bundle[k]) el.textContent = bundle[k];
-  });
-  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
-    const k = el.getAttribute("data-i18n-placeholder");
-    if (bundle[k]) el.setAttribute("placeholder", bundle[k]);
-  });
-  // `.i` buttons live next to field labels — relabel them with the
-  // localized "info" word so they read naturally in both languages.
-  const infoLabel = bundle["common.info"] || "info";
-  document.querySelectorAll("button.i").forEach(btn => {
-    if (!btn.dataset.i18n) btn.textContent = infoLabel;
-  });
+  function apply() {
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      const k = el.getAttribute("data-i18n");
+      if (bundle[k]) el.textContent = bundle[k];
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+      const k = el.getAttribute("data-i18n-placeholder");
+      if (bundle[k]) el.setAttribute("placeholder", bundle[k]);
+    });
+    const infoLabel = bundle["common.info"] || "info";
+    document.querySelectorAll("button.i").forEach(btn => {
+      if (!btn.dataset.i18n) btn.textContent = infoLabel;
+    });
+    document.documentElement.classList.remove("i18n-pending");
+  }
 
-  window.tt = function (k, fallback) { return bundle[k] || fallback || k; };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", apply, { once: true });
+  } else {
+    apply();
+  }
 
-  // Reveal the page now that translations are in place. Layout.html
-  // sets `class="i18n-pending"` on <html>, which the stylesheet uses to
-  // keep <body> invisible until this line — kills the English-then-
-  // Persian flash users saw on Persian-language sessions.
-  document.documentElement.classList.remove("i18n-pending");
+  // tt() may have been declared inline already; keep this assignment as
+  // a no-op compatibility shim in case anyone calls it directly here.
+  window.tt = window.tt || function (k, fb) { return bundle[k] || fb || k; };
 
   // iOS Safari/WebView still triggers double-tap zoom on some
   // builds even with the viewport meta + CSS touch-action hints.

@@ -80,6 +80,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	// Library
 	mux.HandleFunc("/api/lists", s.apiLists)
 	mux.HandleFunc("/api/lists/", s.apiListByID)
+	mux.HandleFunc("/api/samples", s.apiSamples)
+	mux.HandleFunc("/api/samples/", s.apiSampleContent)
 
 	// Live query log (SSE + ring-buffer backfill)
 	mux.HandleFunc("/api/log/recent", s.apiLogRecent)
@@ -143,7 +145,18 @@ func (s *Server) renderPage(w http.ResponseWriter, name string, data map[string]
 	if data == nil {
 		data = map[string]any{}
 	}
-	data["Lang"] = s.cfg.Snapshot().UI.Language
+	lang := s.cfg.Snapshot().UI.Language
+	if lang != "fa" {
+		lang = "en"
+	}
+	data["Lang"] = lang
+	// Inline the translation bundle so the page can render in the right
+	// language on the very first paint — no /api/i18n round-trip = no
+	// "1 second of English then Persian" flash.
+	if b, err := json.Marshal(i18nBundles[lang]); err == nil {
+		data["I18nBundleJSON"] = template.JS(b)
+	}
+	data["I18nChosen"] = s.cfg.Snapshot().UI.Language != ""
 	if err := s.tmpls.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
