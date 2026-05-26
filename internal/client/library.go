@@ -869,7 +869,9 @@ func (l *List) Has(ip string) bool {
 }
 
 // AddPending inserts a new pending IP (subnet expansion). Persists
-// the new IP to ips.txt so it survives restart.
+// the new IP to ips.txt so it survives restart. A Result entry is
+// allocated with the source tag — only subnet-discovered IPs go
+// through here, so the per-entry cost is bounded.
 func (l *List) AddPending(ip, source string) bool {
 	l.mu.Lock()
 	if _, ok := l.IPs[ip]; ok {
@@ -877,6 +879,7 @@ func (l *List) AddPending(ip, source string) bool {
 		return false
 	}
 	l.IPs[ip] = StatusPending
+	l.Results[ip] = &Result{IP: ip, Status: StatusPending, Source: source}
 	l.Meta.Total++
 	lib := l.lib
 	id := l.Meta.ID
